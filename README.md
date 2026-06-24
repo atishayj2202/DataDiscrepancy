@@ -6,36 +6,37 @@ A generalised, rule-based, and statistical Data Quality & Discrepancy Detection 
 
 ## 🚀 Startup (For Non-Technical Users)
 
-This system is designed to be set up and run easily with a **single command**. If you do not have Poetry installed, the launcher script will automatically install it using Python's package installer (`pip`), install all other package requirements, and open the application in your browser.
+This system is designed to be set up and run easily without typing any command-line code. If you do not have Poetry installed, the launcher script will automatically install it, sync all requirements, and open the application in your browser.
 
-### Step 1: Download the Project
-1. Click the green **Code** button at the top of this repository.
-2. Select **Download ZIP** and extract the folder to a location on your computer (e.g., your Desktop).
+### Option A: Running via Python IDLE App (Simplest - No Command Line Needed)
 
-### Step 2: Open Terminal / Command Prompt (Via Search)
-* **On Windows (Start Menu)**: Press the **Windows Key** on your keyboard, type **Command Prompt** (or search for **cmd** or **Python** to open your command line environment), and press **Enter**.
-* **On macOS (Spotlight Search)**: Press **Command + Spacebar** to open Spotlight Search, type **Terminal** (or search for **Python** to find the Terminal/launcher app), and press **Enter**.
+1. **Download the Project**: Click the green **Code** button at the top of this repository, select **Download ZIP**, and extract it on your computer.
+2. **Open the Python Application**: 
+   * **On Windows (Start Menu)**: Press the Windows Key on your keyboard, type **IDLE** (Python's built-in application), and click to open it.
+   * **On macOS (Spotlight Search)**: Press **Command + Spacebar** to open Spotlight, type **IDLE** (or **Python Launcher**), and press **Enter**.
+3. **Open the Launcher Script**: In the IDLE window, click **File** -> **Open...** in the top menu bar, browse to the project folder, and open the `__init__.py` file.
+4. **Run the Script**: Once the `__init__.py` code editor window appears, click **Run** -> **Run Module** in the top menu (or simply press **F5** on Windows, or **fn + F5** on Mac).
 
+*That's it! The Python application will configure the virtual environment, install Poetry and package dependencies in the background, and open the web dashboard in your browser automatically.*
 
-### Step 3: Navigate to the Project Folder
-Type `cd` followed by a space, then drag and drop the extracted project folder from your file manager directly into the Terminal/Command Prompt window, and press Enter:
-```bash
-cd /path/to/extracted/DataDiscrepancy
-```
+---
 
-### Step 4: Run the Launcher Command
+### Option B: Running via Command Line (Alternative)
 
-* **For macOS / Linux**:
-  ```bash
-  python3 __init__.py
-  ```
+1. **Open Terminal / Command Prompt**: 
+   * **On Windows**: Press the Windows Key, type **cmd** (Command Prompt), and press Enter.
+   * **On macOS**: Press **Command + Spacebar**, type **Terminal**, and press Enter.
+2. **Navigate to the Project Folder**: Type `cd ` (with a space), drag the project folder from your file manager directly into the Terminal window, and press Enter.
+3. **Run the Command**:
+   * **For macOS / Linux**:
+     ```bash
+     python3 __init__.py
+     ```
+   * **For Windows**:
+     ```bash
+     python __init__.py
+     ```
 
-* **For Windows**:
-  ```bash
-  python __init__.py
-  ```
-
-That's it! The launcher will download and install Poetry if it is missing, download Streamlit and other dependencies, and open the dashboard in your web browser automatically.
 
 
 ---

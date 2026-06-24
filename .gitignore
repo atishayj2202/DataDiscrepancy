@@ -1,0 +1,24 @@
+# IDEs and OS files
+.idea/
+.DS_Store
+*.suo
+*.sw?
+
+# Python caching & environments
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+env/
+venv/
+.venv/
+.tox/
+.coverage
+.cache
+.pytest_cache/
+.poetry/
+
+# Project specific ignores
+AI.md
+mock_data_discrepancies.csv

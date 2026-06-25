@@ -64,68 +64,83 @@ def find_64bit_python():
 
     return None
 
+def find_pyenv_via_pip_show() -> str:
+    """
+    Runs pip show pyenv-win, parses the 'Location:' field,
+    and returns the path to pyenv.bat inside pyenv-win/bin.
+    Raises ValueError if pyenv-win is not installed or Location is missing.
+    """
+    result = subprocess.run(
+        [sys.executable, "-m", "pip", "show", "pyenv-win"],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True
+    )
+    if result.returncode != 0:
+        raise ValueError("pyenv-win is not installed (pip show returned non-zero exit code).")
+        
+    location = None
+    for line in result.stdout.splitlines():
+        if line.startswith("Location:"):
+            location = line.split(":", 1)[1].strip()
+            break
+            
+    if not location:
+        raise ValueError("Could not find 'Location:' field in pip show output.")
+        
+    # Construct the path to the executable inside pyenv-win/bin
+    pyenv_bat = os.path.join(location, "pyenv-win", "bin", "pyenv.bat")
+    if os.path.exists(pyenv_bat):
+        return pyenv_bat
+        
+    pyenv_vbs = os.path.join(location, "pyenv-win", "bin", "pyenv.vbs")
+    if os.path.exists(pyenv_vbs):
+        return pyenv_vbs
+        
+    raise ValueError(f"pyenv-win was found at {location}, but pyenv.bat was not found in 'pyenv-win/bin'.")
+
 def install_64bit_python_without_admin() -> str:
     """
     Installs Python 3.9.16 (64-bit) silently for the current user using pyenv-win (no admin rights needed).
     Returns the path to the installed python executable if successful, or None.
     """
-    print("[*] Installing pyenv-win via pip to manage Python versions...")
+    print("[*] Running pip install for pyenv-win...")
     try:
-        # 1. Install pyenv-win using pip
+        # Run pip install pyenv-win. If already installed, pip will state "Requirement already satisfied"
         subprocess.run([sys.executable, "-m", "pip", "install", "pyenv-win"], check=True)
-        print("[+] pyenv-win installed successfully.")
+        print("[+] pip install command executed successfully.")
     except Exception as e:
-        print(f"[-] Error installing pyenv-win: {e}", file=sys.stderr)
+        print(f"[-] Error executing pip install pyenv-win: {e}", file=sys.stderr)
         return None
 
-    # Find pyenv executable path
-    # When installed via pip, the entry points are created in the Python Scripts folder
-    # which is at os.path.dirname(sys.executable)/Scripts/pyenv.exe (or pyenv.bat)
-    python_dir = os.path.dirname(sys.executable)
-    pyenv_exe = os.path.join(python_dir, "Scripts", "pyenv.exe")
-    if not os.path.exists(pyenv_exe):
-        pyenv_exe = os.path.join(python_dir, "Scripts", "pyenv.bat")
-    
-    # Check if pyenv is in system path as fallback
-    if not os.path.exists(pyenv_exe):
-        pyenv_exe = shutil.which("pyenv")
-        
-    # Check %USERPROFILE%\.pyenv\pyenv-win\bin\pyenv.bat as another fallback
-    if not pyenv_exe:
-        user_profile = os.environ.get("USERPROFILE", "")
-        if user_profile:
-            pyenv_bat = os.path.join(user_profile, ".pyenv", "pyenv-win", "bin", "pyenv.bat")
-            if os.path.exists(pyenv_bat):
-                pyenv_exe = pyenv_bat
+    print("[*] Locating pyenv-win path using pip show...")
+    try:
+        pyenv_exe = find_pyenv_via_pip_show()
+        print(f"[+] Found pyenv executable: {pyenv_exe}")
+    except Exception as e:
+        print(f"[-] ERROR: {e}", file=sys.stderr)
+        sys.exit(1)
 
-    if not pyenv_exe:
-        print("[-] Error: Could not locate pyenv executable.", file=sys.stderr)
-        return None
-
-    print(f"[*] Using pyenv path: {pyenv_exe}")
     print("[*] Running command line installation for Python 3.9.16...")
     try:
-        # 2. Run pyenv install 3.9.16
-        # On Windows pyenv-win, the command is "pyenv install 3.9.16"
-        result = subprocess.run([pyenv_exe, "install", "3.9.16"], check=True)
-        if result.returncode == 0:
-            print("[+] Python 3.9.16 (64-bit) installation command completed successfully.")
+        # Run pyenv install 3.9.16
+        subprocess.run([pyenv_exe, "install", "3.9.16"], check=True)
+        print("[+] Python 3.9.16 (64-bit) installation command completed successfully.")
+        
+        # Locate the installed Python 3.9.16 path
+        user_profile = os.environ.get("USERPROFILE", "")
+        if user_profile:
+            py39_path = os.path.join(user_profile, ".pyenv", "pyenv-win", "versions", "3.9.16", "python.exe")
+            if os.path.exists(py39_path):
+                return py39_path
             
-            # 3. Locate the installed Python 3.9.16 path
-            # By default, pyenv-win installs versions to %USERPROFILE%\.pyenv\pyenv-win\versions\3.9.16\python.exe
-            user_profile = os.environ.get("USERPROFILE", "")
-            if user_profile:
-                py39_path = os.path.join(user_profile, ".pyenv", "pyenv-win", "versions", "3.9.16", "python.exe")
-                if os.path.exists(py39_path):
-                    return py39_path
-                    
-                # Search dynamically in versions folder
-                versions_dir = os.path.join(user_profile, ".pyenv", "pyenv-win", "versions")
-                if os.path.exists(versions_dir):
-                    search_pattern = os.path.join(versions_dir, "3.9.16*", "python.exe")
-                    matches = glob.glob(search_pattern)
-                    if matches:
-                        return matches[0]
+            # Dynamic search fallback in versions dir
+            versions_dir = os.path.join(user_profile, ".pyenv", "pyenv-win", "versions")
+            if os.path.exists(versions_dir):
+                search_pattern = os.path.join(versions_dir, "3.9.16*", "python.exe")
+                matches = glob.glob(search_pattern)
+                if matches:
+                    return matches[0]
     except Exception as e:
         print(f"[-] Error installing Python 3.9.16 via pyenv: {e}", file=sys.stderr)
 

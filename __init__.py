@@ -66,66 +66,69 @@ def find_64bit_python():
 
 def install_64bit_python_without_admin() -> str:
     """
-    Downloads and installs Python 3.9.13 64-bit silently for the current user (no admin rights needed).
+    Installs Python 3.9.16 (64-bit) silently for the current user using pyenv-win (no admin rights needed).
     Returns the path to the installed python executable if successful, or None.
     """
-    url = "https://www.python.org/ftp/python/3.9.13/python-3.9.13-amd64.exe"
-    print("[*] Downloading Python 3.9.13 (64-bit) installer...")
-    print(f"    From: {url}")
-    
+    print("[*] Installing pyenv-win via pip to manage Python versions...")
     try:
-        temp_dir = tempfile.gettempdir()
-        installer_path = os.path.join(temp_dir, "python-3.9.13-amd64.exe")
+        # 1. Install pyenv-win using pip
+        subprocess.run([sys.executable, "-m", "pip", "install", "pyenv-win"], check=True)
+        print("[+] pyenv-win installed successfully.")
+    except Exception as e:
+        print(f"[-] Error installing pyenv-win: {e}", file=sys.stderr)
+        return None
+
+    # Find pyenv executable path
+    # When installed via pip, the entry points are created in the Python Scripts folder
+    # which is at os.path.dirname(sys.executable)/Scripts/pyenv.exe (or pyenv.bat)
+    python_dir = os.path.dirname(sys.executable)
+    pyenv_exe = os.path.join(python_dir, "Scripts", "pyenv.exe")
+    if not os.path.exists(pyenv_exe):
+        pyenv_exe = os.path.join(python_dir, "Scripts", "pyenv.bat")
+    
+    # Check if pyenv is in system path as fallback
+    if not os.path.exists(pyenv_exe):
+        pyenv_exe = shutil.which("pyenv")
         
-        # Download the installer using urllib with a User-Agent header and ignoring SSL errors for corporate proxies
-        context = ssl._create_unverified_context()
-        req = urllib.request.Request(
-            url, 
-            headers={'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'}
-        )
-        with urllib.request.urlopen(req, context=context) as response, open(installer_path, 'wb') as out_file:
-            shutil.copyfileobj(response, out_file)
-            
-        print("[+] Download complete.")
-        
-        print("[*] Installing Python 3.9.13 (64-bit) silently for the current user...")
-        # Run installer silently for the current user:
-        # InstallAllUsers=0 (no admin required)
-        # PrependPath=1 (add to user PATH)
-        # /quiet (silent install)
-        # AssociateFiles=0 Shortcuts=0 (reduce installer footprint)
-        result = subprocess.run([
-            installer_path,
-            "/quiet",
-            "InstallAllUsers=0",
-            "PrependPath=1",
-            "AssociateFiles=0",
-            "Shortcuts=0"
-        ])
-        
+    # Check %USERPROFILE%\.pyenv\pyenv-win\bin\pyenv.bat as another fallback
+    if not pyenv_exe:
+        user_profile = os.environ.get("USERPROFILE", "")
+        if user_profile:
+            pyenv_bat = os.path.join(user_profile, ".pyenv", "pyenv-win", "bin", "pyenv.bat")
+            if os.path.exists(pyenv_bat):
+                pyenv_exe = pyenv_bat
+
+    if not pyenv_exe:
+        print("[-] Error: Could not locate pyenv executable.", file=sys.stderr)
+        return None
+
+    print(f"[*] Using pyenv path: {pyenv_exe}")
+    print("[*] Running command line installation for Python 3.9.16...")
+    try:
+        # 2. Run pyenv install 3.9.16
+        # On Windows pyenv-win, the command is "pyenv install 3.9.16"
+        result = subprocess.run([pyenv_exe, "install", "3.9.16"], check=True)
         if result.returncode == 0:
-            print("[+] Python 3.9.13 (64-bit) installed successfully!")
+            print("[+] Python 3.9.16 (64-bit) installation command completed successfully.")
             
-            # Check user install path
-            local_app_data = os.environ.get("LOCALAPPDATA", "")
-            if local_app_data:
-                user_py_path = os.path.join(local_app_data, "Programs", "Python", "Python39", "python.exe")
-                if os.path.exists(user_py_path):
-                    return user_py_path
-            
-            # Fallback glob search in user profile
+            # 3. Locate the installed Python 3.9.16 path
+            # By default, pyenv-win installs versions to %USERPROFILE%\.pyenv\pyenv-win\versions\3.9.16\python.exe
             user_profile = os.environ.get("USERPROFILE", "")
             if user_profile:
-                search_pattern = os.path.join(user_profile, "AppData", "Local", "Programs", "Python", "Python3*", "python.exe")
-                matches = glob.glob(search_pattern)
-                if matches:
-                    return matches[0]
-        else:
-            print(f"[-] Error: Installer exited with code {result.returncode}", file=sys.stderr)
-            
+                py39_path = os.path.join(user_profile, ".pyenv", "pyenv-win", "versions", "3.9.16", "python.exe")
+                if os.path.exists(py39_path):
+                    return py39_path
+                    
+                # Search dynamically in versions folder
+                versions_dir = os.path.join(user_profile, ".pyenv", "pyenv-win", "versions")
+                if os.path.exists(versions_dir):
+                    search_pattern = os.path.join(versions_dir, "3.9.16*", "python.exe")
+                    matches = glob.glob(search_pattern)
+                    if matches:
+                        return matches[0]
     except Exception as e:
-        print(f"[-] Error: Failed to download or install Python silently: {e}", file=sys.stderr)
-        
+        print(f"[-] Error installing Python 3.9.16 via pyenv: {e}", file=sys.stderr)
+
     return None
 
 def get_poetry_command():
@@ -201,11 +204,11 @@ def main():
             sys.exit()
         
         print("64-bit Python not found")
-        if not ask_permission("[?] Do you want to download and install 64-bit Python 3.9 silently now (no admin rights required)?"):
+        if not ask_permission("[?] Do you want to download and install 64-bit Python 3.9.16 silently now (no admin rights required)?"):
             print("[-] ERROR: Python 64-bit installation disallowed by user. Exiting.", file=sys.stderr)
             sys.exit(1)
             
-        print("[*] Attempting user-level silent installation of 64-bit Python 3.9...")
+        print("[*] Attempting user-level silent installation of 64-bit Python 3.9.16...")
         py64 = install_64bit_python_without_admin()
         if py64:
             print(f"[+] Successfully installed 64-bit Python: {py64}")
@@ -214,7 +217,7 @@ def main():
             sys.exit()
         else:
             print("[-] ERROR: Failed to install or locate 64-bit Python.", file=sys.stderr)
-            print("    Please manually download and install 64-bit Python 3 from:", file=sys.stderr)
+            print("    Please manually download and install 64-bit Python 3.9.16 or newer from:", file=sys.stderr)
             print("    https://www.python.org/downloads/ (Check 'Add python.exe to PATH' during installation)", file=sys.stderr)
             sys.exit(1)
 

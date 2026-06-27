@@ -80,8 +80,8 @@ class FormatInconsistencyAgent(BaseAgent):
             dominant_pct = dominant_count / total_count
 
             # If the dominant pattern represents more than 'threshold' of the values,
-            # we flag the rows that have a different pattern.
-            if dominant_pct >= threshold:
+            # and is at least 50% (the minimum cut-off), we flag the rows that have a different pattern.
+            if dominant_pct >= threshold and dominant_pct >= 0.50:
                 inconsistent_mask = pattern_series != dominant_pattern
                 inconsistent_indices = pattern_series.index[inconsistent_mask].tolist()
                 

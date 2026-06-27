@@ -143,16 +143,20 @@ class WrongDataTypeAgent(BaseAgent):
                 max_count = type_counts["datetime"]
                 
             if num_numeric > max_count:
-                # If it's numeric, choose int if integers are the majority, else float
-                if type_counts["int"] >= type_counts["float"]:
+                # If it's numeric, choose Decimal (float) if integers and decimals have a small difference in count
+                # (e.g. if float count is > 0 and the absolute difference is less than 80% of the sum).
+                # This ensures Amount/Price columns are correctly classified as Decimal even if they contain many whole numbers.
+                if type_counts["float"] > 0 and abs(type_counts["int"] - type_counts["float"]) / num_numeric < 0.8:
+                    inferred_type = "float"
+                elif type_counts["int"] >= type_counts["float"]:
                     inferred_type = "int"
                 else:
                     inferred_type = "float"
                 max_count = num_numeric
 
-            # If the majority type represents > 50% of the non-null data and it's not a general string type,
+            # If the majority type represents >= 50% of the non-null data and it's not a general string type,
             # we flag the remaining minority that cannot be cast.
-            if inferred_type != "str" and (max_count / total_non_null) > 0.50:
+            if inferred_type != "str" and (max_count / total_non_null) >= 0.50:
                 wrong_indices = []
                 example_val = None
 

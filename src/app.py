@@ -296,9 +296,10 @@ if st.session_state.df is None:
     """, unsafe_allow_html=True)
 else:
     # Tabs
-    tab_profile, tab_audit, tab_review = st.tabs([
+    tab_profile, tab_audit, tab_visual, tab_review = st.tabs([
         "📊 Dataset Profiler", 
         "🔍 Quality Audit Findings", 
+        "📈 Visualization",
         "🕵️‍♂️ Flagged for Review (No-AI)"
     ])
     
@@ -418,36 +419,56 @@ else:
                 
                 st.markdown(f"### 📋 Discrepancy Report ({len(filtered_findings)} issues filtered)")
                 
-                # Render table with custom badges
-                # Streamlit dataframe doesn't render raw HTML well unless we use markdown columns or a structured table.
-                # Let's present it as a neat interactive DataFrame or build a table representation.
-                table_rows = []
-                for f in filtered_findings:
-                    review_status = "🟣 Needs Review (No AI)" if f.review_needed else "🟢 Deterministic"
-                    table_rows.append({
-                        "Column": f.column,
-                        "Issue Type": f.issue_type,
-                        "Criticality": f.criticality,
-                        "Rows Affected": len(f.row_indices),
-                        "Example Value": str(f.example_value),
-                        "Remediation / Interpretation": f.interpretation,
-                        "Review Status": review_status
-                    })
+                # Specify how criticality is chosen
+                with st.expander("ℹ️ How is issue criticality determined?"):
+                    st.markdown("""
+                    Discrepancy criticality is classified based on the severity and impact of the issue:
+                    - 🔴 **High Criticality**: Severe schema or integrity violations. Includes values that cannot be cast to the inferred column type (Wrong Data Type), values violating hard logical limits (Out of Range), or critical missing value levels (>30%).
+                    - 🟡 **Medium Criticality**: Standard format or consistency issues. Includes inconsistent date/number formatting (Format Inconsistency), duplicate or near-duplicate records, statistical outliers (Z-score/IQR bounds), or moderate missing value levels (5-30%).
+                    - 🔵 **Low Criticality**: Minor formatting or presentation anomalies. Includes trailing/leading/extra whitespace, case-sensitivity clashes (e.g. 'mumbai' vs 'Mumbai'), or minor missing value levels (<=5%).
+                    """)
                 
-                if table_rows:
-                    findings_df = pd.DataFrame(table_rows)
-                    st.dataframe(
-                        findings_df, 
-                        width="stretch", 
-                        hide_index=True,
-                        column_config={
-                            "Rows Affected": st.column_config.NumberColumn(format="%d"),
-                        }
-                    )
+                # Group findings by issue type
+                unique_issue_types = sorted(list(set(f.issue_type for f in filtered_findings)))
+                
+                if unique_issue_types:
+                    for issue_type in unique_issue_types:
+                        issue_findings = [f for f in filtered_findings if f.issue_type == issue_type]
+                        total_rows_affected = sum(len(f.row_indices) for f in issue_findings)
+                        
+                        expander_label = f"📁 {issue_type} — {len(issue_findings)} columns affected ({total_rows_affected} total rows affected)"
+                        
+                        with st.expander(expander_label):
+                            table_rows = []
+                            for f in issue_findings:
+                                review_status = "🟣 Needs Review" if f.review_needed else "🟢 Deterministic"
+                                table_rows.append({
+                                    "Column": f.column,
+                                    "Criticality": f.criticality,
+                                    "Rows Affected": len(f.row_indices),
+                                    "Example Value": str(f.example_value),
+                                    "Remediation / Interpretation": f.interpretation,
+                                    "Review Status": review_status
+                                })
+                            
+                            findings_df = pd.DataFrame(table_rows)
+                            st.dataframe(
+                                findings_df, 
+                                width="stretch", 
+                                hide_index=True,
+                                column_config={
+                                    "Rows Affected": st.column_config.NumberColumn(format="%d"),
+                                }
+                            )
                     
+                    st.markdown("---")
                     # Highlight detail drawer / inspector
                     st.markdown("### 🔎 Row-Level Inspector")
-                    selected_issue_idx = st.selectbox("Select an issue row to inspect affected rows:", range(len(filtered_findings)), format_func=lambda i: f"#{i+1}: {filtered_findings[i].column} - {filtered_findings[i].issue_type}")
+                    selected_issue_idx = st.selectbox(
+                        "Select an issue row to inspect affected rows:", 
+                        range(len(filtered_findings)), 
+                        format_func=lambda i: f"#{i+1}: {filtered_findings[i].column} - {filtered_findings[i].issue_type}"
+                    )
                     
                     selected_issue = filtered_findings[selected_issue_idx]
                     
@@ -457,8 +478,98 @@ else:
                         
                     st.markdown(f"Showing rows affected (Indices: `{selected_issue.row_indices[:20]}`" + (f" + {len(selected_issue.row_indices)-20} more" if len(selected_issue.row_indices) > 20 else "") + "):")
                     st.dataframe(st.session_state.df.loc[selected_issue.row_indices].head(50).astype(str), width="stretch")
+                else:
+                    st.info("No issues found matching the active filters.")
 
-    # --- Tab 3: Flagged for Review (No-AI) ---
+    # --- Tab 3: Visualization ---
+    with tab_visual:
+        if not st.session_state.audit_run:
+            st.info("Please click 'Run Quality Audit' in the sidebar to visualize findings.")
+        else:
+            findings: List[Discrepancy] = st.session_state.discrepancies
+            if not findings:
+                st.success("🎉 No issues detected! Nothing to visualize.")
+            else:
+                st.markdown("### 📈 Data Quality Visualization Dashboard")
+                st.write("Visual insights into detected discrepancies across your dataset.")
+                
+                # Issue counts by criticality
+                high_count = sum(1 for f in findings if f.criticality == "High")
+                med_count = sum(1 for f in findings if f.criticality == "Medium")
+                low_count = sum(1 for f in findings if f.criticality == "Low")
+                
+                # Grid of global stats charts
+                vc1, vc2 = st.columns(2)
+                
+                with vc1:
+                    st.markdown("#### 🔴 Issue count by Criticality")
+                    crit_df = pd.DataFrame({
+                        "Criticality": ["High 🔴", "Medium 🟡", "Low 🔵"],
+                        "Count": [high_count, med_count, low_count]
+                    })
+                    st.bar_chart(crit_df.set_index("Criticality"), color="#ff4b4b" if high_count > 0 else "#29b5e8")
+                    
+                with vc2:
+                    st.markdown("#### 📋 Issues by Column")
+                    col_series = pd.Series([f.column for f in findings])
+                    col_counts = col_series.value_counts().reset_index()
+                    col_counts.columns = ["Column", "Issues Found"]
+                    st.bar_chart(col_counts.set_index("Column"))
+                
+                st.markdown("#### 🔍 Issue Type Distribution")
+                type_series = pd.Series([f.issue_type for f in findings])
+                type_counts = type_series.value_counts().reset_index()
+                type_counts.columns = ["Issue Type", "Count"]
+                st.bar_chart(type_counts.set_index("Issue Type"))
+                
+                # Column Specific Visualization
+                st.markdown("---")
+                st.markdown("#### 🎯 Column-Level Quality Deep Dive")
+                selected_col = st.selectbox("Select a column to analyze:", st.session_state.df.columns.tolist())
+                
+                # Find all discrepancies affecting this column
+                col_findings = [f for f in findings if f.column == selected_col]
+                
+                # Calculate affected rows for this column
+                affected_rows_indices = set()
+                col_issue_counts = {}
+                for f in col_findings:
+                    affected_rows_indices.update(f.row_indices)
+                    col_issue_counts[f.issue_type] = col_issue_counts.get(f.issue_type, 0) + len(f.row_indices)
+                
+                total_rows = len(st.session_state.df)
+                num_affected = len(affected_rows_indices)
+                num_clean = total_rows - num_affected
+                clean_pct = (num_clean / total_rows) * 100
+                
+                # Columns for column-specific stats
+                cc1, cc2 = st.columns([1, 2])
+                with cc1:
+                    st.markdown(f"**Column Statistics:** `{selected_col}`")
+                    st.metric("Total Rows", total_rows)
+                    st.metric("Clean Rows", num_clean, delta=f"{clean_pct:.1f}%")
+                    st.metric("Discrepant Rows", num_affected, delta=f"-{(num_affected/total_rows)*100:.1f}%", delta_color="inverse")
+                
+                with cc2:
+                    st.markdown("**Clean vs Discrepant Rows**")
+                    ratio_df = pd.DataFrame({
+                        "Status": ["Clean Rows", "Discrepant Rows"],
+                        "Rows": [num_clean, num_affected]
+                    })
+                    st.bar_chart(ratio_df.set_index("Status"), color="#29b5e8")
+                
+                # Show issue breakdown in this column
+                if col_findings:
+                    st.markdown(f"**Discrepancies breakdown for `{selected_col}`:**")
+                    col_breakdown_df = pd.DataFrame({
+                        "Issue Type": list(col_issue_counts.keys()),
+                        "Rows Affected": list(col_issue_counts.values())
+                    })
+                    st.bar_chart(col_breakdown_df.set_index("Issue Type"))
+                else:
+                    st.success(f"✨ Column `{selected_col}` is 100% clean! No discrepancies detected.")
+
+    # --- Tab 4: Flagged for Review (No-AI) ---
     with tab_review:
         if not st.session_state.audit_run:
             st.info("Run Quality Audit first to discover issues requiring review.")

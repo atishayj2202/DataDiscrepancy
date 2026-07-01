@@ -429,65 +429,24 @@ else:
         else:
             df = st.session_state.df
             findings = st.session_state.discrepancies
+            total_rows = len(df)
             
             # 1. Calculate score & rating & penalties
             score, rating, penalties = calculate_quality_score(df, findings)
             
-            # Calculate impacted rows
-            total_rows = len(df)
-            all_affected_rows = set()
-            missing_rows = set()
-            duplicate_rows = set()
-            format_rows = set()
-            outlier_rows = set()
-            
+            # Count issues by severity
             high_count = sum(1 for f in findings if f.criticality == "High")
             med_count = sum(1 for f in findings if f.criticality == "Medium")
             low_count = sum(1 for f in findings if f.criticality == "Low")
-            review_count = sum(1 for f in findings if f.review_needed)
             
-            manual_review_rows = set()
-            auto_fixable_rows = set()
-            
+            # Unique overall impacted rows
+            all_affected_rows = set()
             for f in findings:
                 all_affected_rows.update(f.row_indices)
-                if f.issue_type == "Missing Value":
-                    missing_rows.update(f.row_indices)
-                elif "Duplicate" in f.issue_type:
-                    duplicate_rows.update(f.row_indices)
-                elif f.issue_type == "Format Inconsistency":
-                    format_rows.update(f.row_indices)
-                elif "Outlier" in f.issue_type or "Anomaly" in f.issue_type or "Range" in f.issue_type:
-                    outlier_rows.update(f.row_indices)
-                    
-                if f.review_needed:
-                    manual_review_rows.update(f.row_indices)
-                
-                # Auto fixable: Whitespace, casing, and exact duplicates
-                if f.issue_type in ["Whitespace & Encoding", "Inconsistent Casing"] or ("Duplicate" in f.issue_type and not f.review_needed):
-                    auto_fixable_rows.update(f.row_indices)
+            affected_cnt = len(all_affected_rows)
+            affected_pct = (affected_cnt / total_rows * 100) if total_rows > 0 else 0
             
-            impacted_pct = (len(all_affected_rows) / total_rows * 100) if total_rows > 0 else 0
-            auto_fix_pct = (len(auto_fixable_rows) / len(all_affected_rows) * 100) if all_affected_rows else 100
-            
-            # Trust mapping
-            if score >= 90:
-                trust = "Production Ready"
-                trust_color = "#00cc96"
-            elif score >= 75:
-                trust = "High Confidence"
-                trust_color = "#29b5e8"
-            elif score >= 60:
-                trust = "Moderate Confidence"
-                trust_color = "#ffaa00"
-            elif score >= 40:
-                trust = "Low Confidence"
-                trust_color = "#ff6b00"
-            else:
-                trust = "Not Suitable for ML"
-                trust_color = "#ff4b4b"
-                
-            # Color for quality score
+            # Color for quality score KPI
             if rating == "EXCELLENT":
                 score_color = "#00cc96"
             elif rating == "GOOD":
@@ -497,207 +456,129 @@ else:
             else:
                 score_color = "#ff4b4b"
                 
-            # SECTION A: KPI Cards
+            # Render 5 KPI Cards
             st.markdown("### 📊 Dataset Quality Overview")
-            
-            kpi_cols = st.columns(6)
+            kpi_cols = st.columns(5)
             with kpi_cols[0]:
-                kpi_card("Data Quality Score", f"{score} / 100", rating, score_color)
+                kpi_card("Quality Score", f"{score} / 100", rating, score_color)
             with kpi_cols[1]:
-                kpi_card("Rows Impacted", f"{impacted_pct:.1f}%", f"{len(all_affected_rows)} / {total_rows} rows", "#ff6b00")
+                kpi_card("Impacted Rows", f"{affected_pct:.1f}%", f"{affected_cnt} / {total_rows} rows", "#ff6b00" if affected_cnt > 0 else "#00cc96")
             with kpi_cols[2]:
-                kpi_card("Critical Issues", f"{high_count}", "Immediate Action" if high_count > 0 else "All Clear", "#ff4b4b" if high_count > 0 else "#00cc96")
+                kpi_card("Low Issues", str(low_count), "Severity: Low", "#29b5e8")
             with kpi_cols[3]:
-                kpi_card("Auto Fix Potential", f"{int(auto_fix_pct)}%", "Correctable Rows", "#00cc96")
+                kpi_card("Medium Issues", str(med_count), "Severity: Medium", "#ffaa00")
             with kpi_cols[4]:
-                kpi_card("Manual Review Required", f"{len(manual_review_rows)} Rows", "Human Action Needed", "#29b5e8")
-            with kpi_cols[5]:
-                kpi_card("Dataset Trust", trust, "Confidence Rating", trust_color)
-
-            
-            # Determine top columns and issues for summary
-            col_counts = pd.Series([f.column for f in findings]).value_counts()
-            top_col_str = f"'{col_counts.index[0]}'" if not col_counts.empty else "N/A"
-            
-            issue_type_counts = pd.Series([f.issue_type for f in findings]).value_counts()
-            top_issue_str = f"'{issue_type_counts.index[0]}'" if not issue_type_counts.empty else "N/A"
-            top_issue_pct = (issue_type_counts.iloc[0] / len(findings) * 100) if not issue_type_counts.empty else 0
-            
-            summary_bullets = [
-                f"• Dataset quality score is <b>{score}/100</b> ({rating.capitalize()}).",
-                f"• <b>{impacted_pct:.1f}%</b> of rows ({len(all_affected_rows)} rows) contain at least one quality discrepancy.",
-                f"• Most column-specific discrepancies originate from column <b>{top_col_str}</b>.",
-                f"• <b>{top_issue_str}</b> represents <b>{top_issue_pct:.1f}%</b> of all flagged discrepancies.",
-                f"• <b>{int(auto_fix_pct)}%</b> of the rows with issues can be automatically corrected (formatting, whitespace, casing, exact duplicates).",
-                f"• <b>{len(manual_review_rows)} rows</b> require manual investigation (borderline out-of-range, duplicate candidates, multivariate anomalies)."
-            ]
-            
-            # Row with Executive Summary and Donut Chart
-            r2_col1, r2_col2 = st.columns([3, 2])
-            
-            with r2_col1:
-                st.markdown("### 📋 Executive Summary")
-                st.markdown(f"""
-                <div class='glass-card' style='padding: 20px; min-height: 380px; margin-bottom: 25px;'>
-                    <p style='margin: 0 0 10px 0; font-size: 0.95rem; font-weight: 600; color: #888888;'>Key Insights:</p>
-                    <div style='line-height: 1.6; font-size: 0.9rem;'>
-                        {"<br>".join(summary_bullets)}
-                    </div>
-                </div>
-                """, unsafe_allow_html=True)
+                kpi_card("High Issues", str(high_count), "Severity: High", "#ff4b4b")
                 
-            with r2_col2:
-                st.markdown("### 🍩 Issue Type Distribution")
-                if len(findings) > 0:
-                    type_series = pd.Series([f.issue_type for f in findings])
-                    type_counts = type_series.value_counts().reset_index()
-                    type_counts.columns = ["Issue Type", "Count"]
-                    type_counts["Percentage"] = (type_counts["Count"] / type_counts["Count"].sum() * 100).round(1)
-                    type_counts["Percentage Str"] = type_counts["Percentage"].astype(str) + "%"
-                    type_counts_df = type_counts.copy()
-                    
-                    arc = alt.Chart(type_counts_df).mark_arc(innerRadius=60, outerRadius=90).encode(
-                        theta=alt.Theta(field="Count", type="quantitative"),
-                        color=alt.Color(field="Issue Type", type="nominal", legend=alt.Legend(orient="bottom", columns=2)),
-                        tooltip=["Issue Type", "Count", "Percentage Str"]
-                    )
-                    
-                    # Center text showing total issues count
-                    total_issues = len(findings)
-                    center_data = pd.DataFrame([{"text": f"{total_issues} Issues"}])
-                    text = alt.Chart(center_data).mark_text(
-                        align='center',
-                        baseline='middle',
-                        fontSize=14,
-                        fontWeight='bold'
-                    ).encode(
-                        text='text:N'
-                    )
-                    
-                    donut_chart = (arc + text).properties(
-                        height=280
-                    )
-                    st.altair_chart(donut_chart, use_container_width=True)
+            # Classify findings into the 6 categories requested
+            categories = {
+                "Null Value": [],
+                "Duplicate Rows": [],
+                "Near to Duplicate Rows": [],
+                "Inconsistent Casing": [],
+                "Data Entry Error": [],
+                "Incomplete Records": []
+            }
+            
+            for f in findings:
+                if f.issue_type == "Missing Values":
+                    val_str = str(f.example_value).strip()
+                    if val_str in ["?", "-"]:
+                        categories["Incomplete Records"].append(f)
+                    else:
+                        categories["Null Value"].append(f)
+                elif f.issue_type == "Exact Duplicate Records":
+                    categories["Duplicate Rows"].append(f)
+                elif f.issue_type == "Near-Duplicate Records":
+                    categories["Near to Duplicate Rows"].append(f)
+                elif f.issue_type == "Inconsistent Casing":
+                    categories["Inconsistent Casing"].append(f)
+                elif f.issue_type in ["Clear Out-of-Range", "Borderline Out-of-Range (Requires Review)", 
+                                       "Ambiguous Statistical Outlier (Requires Review)", "Confirmed Statistical Outlier", 
+                                       "Wrong Data Type", "Format Inconsistency"]:
+                    categories["Data Entry Error"].append(f)
+                elif f.issue_type == "Whitespace & Encoding":
+                    # Check if the example contains space placeholders, ?, - or other incomplete symbol
+                    val_str = str(f.example_value).strip()
+                    if val_str in ["?", "-"] or not val_str:
+                        categories["Incomplete Records"].append(f)
+                    else:
+                        # Whitespace is usually incomplete formatting or spacing
+                        categories["Incomplete Records"].append(f)
                 else:
-                    st.info("No issues found to show distribution.")
+                    # Fallback to Data Entry Error (e.g. multivariate anomaly, statistical outliers etc.)
+                    categories["Data Entry Error"].append(f)
+            
+            summary_table_data = []
+            crit_order = {"High": 3, "Medium": 2, "Low": 1, "Clean": 0}
+            
+            for cat_name, cat_findings in categories.items():
+                if cat_findings:
+                    # Determine highest criticality
+                    highest_crit = "Low"
+                    for f in cat_findings:
+                        if crit_order.get(f.criticality, 1) > crit_order.get(highest_crit, 1):
+                            highest_crit = f.criticality
                     
-            # SECTION C: Issue Heatmap (Full Width)
-            st.markdown("### 🗺️ Column vs. Issue Heatmap")
-            st.write("Identifies which columns suffer from which specific issue categories.")
+                    crit_badge = f"🔴 {highest_crit}" if highest_crit == "High" else f"🟡 {highest_crit}" if highest_crit == "Medium" else f"🔵 {highest_crit}"
+                    
+                    # Unique impacted rows for this category
+                    cat_rows = set()
+                    for f in cat_findings:
+                        cat_rows.update(f.row_indices)
+                    
+                    cat_cnt = len(cat_rows)
+                    cat_pct = (cat_cnt / total_rows * 100) if total_rows > 0 else 0
+                    cat_str = f"{cat_pct:.1f}% ({cat_cnt} / {total_rows})"
+                else:
+                    crit_badge = "🟢 Clean"
+                    cat_str = "0.0% (0 / {})".format(total_rows)
+                    
+                summary_table_data.append({
+                    "Error Type": cat_name,
+                    "Criticality": crit_badge,
+                    "Impacted Rows": cat_str
+                })
+                
+            # SECTION B: Summary Table
+            st.markdown("### 📋 Data Quality Error Summary")
+            st.write("Summary breakdown of key discrepancy error types detected across the dataset.")
             
-            all_columns = df.columns.tolist()
-            all_issue_types = list(set(f.issue_type for f in findings))
+            summary_df = pd.DataFrame(summary_table_data)
+            st.dataframe(summary_df, use_container_width=True, hide_index=True)
             
-            if all_issue_types:
-                grid_data = []
-                for col in all_columns:
-                    col_findings = [f for f in findings if f.column == col]
-                    for issue_type in all_issue_types:
-                        matching = [f for f in col_findings if f.issue_type == issue_type]
-                        if matching:
-                            rows_affected = len(matching[0].row_indices)
-                            pct = (rows_affected / total_rows) * 100 if total_rows > 0 else 0
-                        else:
-                            rows_affected = 0
-                            pct = 0.0
-                            
-                        grid_data.append({
-                            "Column": col,
-                            "Issue Type": issue_type,
-                            "Rows Affected": rows_affected,
-                            "Percentage Affected": f"{pct:.1f}%"
+            # SECTION C: Interactive Drill Down
+            st.markdown("### 🔍 Column Drill Down")
+            st.write("Select an error category below to identify the specific columns where this issue resides.")
+            
+            selected_cat = st.selectbox(
+                "Choose error type to inspect columns:",
+                list(categories.keys()),
+                key="summary_drill_down_select"
+            )
+            
+            if selected_cat:
+                cat_findings = categories[selected_cat]
+                if not cat_findings:
+                    st.success(f"✨ No issues detected for category: **{selected_cat}**.")
+                else:
+                    drill_rows = []
+                    for f in cat_findings:
+                        drill_rows.append({
+                            "Column": f.column,
+                            "Criticality": f"🔴 {f.criticality}" if f.criticality == "High" else f"🟡 {f.criticality}" if f.criticality == "Medium" else f"🔵 {f.criticality}",
+                            "Rows Affected": len(f.row_indices),
+                            "Example Value": str(f.example_value),
+                            "Details": f.interpretation
                         })
-                        
-                heatmap_df = pd.DataFrame(grid_data)
-                
-                # Diverging red-to-green (reversed 'redyellowgreen' so green is clean/0 and red is high)
-                heatmap_chart = alt.Chart(heatmap_df).mark_rect().encode(
-                    x=alt.X('Issue Type:N', title='Issue Category', axis=alt.Axis(labelAngle=-45)),
-                    y=alt.Y('Column:N', title='Dataset Column'),
-                    color=alt.Color('Rows Affected:Q', title='Rows Affected', scale=alt.Scale(scheme='redyellowgreen', reverse=True)),
-                    tooltip=['Column', 'Issue Type', 'Rows Affected', 'Percentage Affected']
-                ).properties(
-                    height=200 + (len(all_columns) * 15)
-                )
-                st.altair_chart(heatmap_chart, use_container_width=True)
-            else:
-                st.info("No issues detected to draw a heatmap.")
-                
-            # Row with Top Issues to Fix & Top Columns to Fix
-            r3_col1, r3_col2 = st.columns(2)
-            
-            with r3_col1:
-                # SECTION E: Top Issues to Fix
-                st.markdown("### 🎯 Top Issues to Fix")
-                st.write("Ranked by priority score (Criticality Weight × Rows Affected).")
-                
-                crit_weights = {"High": 3, "Medium": 2, "Low": 1}
-                ranked_issues = []
-                for f in findings:
-                    weight = crit_weights.get(f.criticality, 1)
-                    score_val = weight * len(f.row_indices)
-                    ranked_issues.append({
-                        "finding": f,
-                        "priority_score": score_val
-                    })
-                
-                ranked_issues.sort(key=lambda x: x["priority_score"], reverse=True)
-                top_5_issues = ranked_issues[:5]
-                
-                if top_5_issues:
-                    for item in top_5_issues:
-                        f = item["finding"]
-                        score_val = item["priority_score"]
-                        crit_icon = "🔴" if f.criticality == "High" else "🟡" if f.criticality == "Medium" else "🔵"
-                        st.markdown(f"""
-                        <div class='glass-card' style='padding: 12px; margin: 8px 0; border-left: 4px solid {"#ff4b4b" if f.criticality == "High" else "#ffaa00" if f.criticality == "Medium" else "#29b5e8"};'>
-                            <div style='display: flex; justify-content: space-between; align-items: center;'>
-                                <span style='font-weight: 600; font-size: 0.9rem;'>{crit_icon} {f.column} - {f.issue_type}</span>
-                                <span class='badge' style='background: rgba(255, 75, 75, 0.15); color: #ff4b4b; font-size: 0.75rem; padding: 2px 8px; border-radius: 4px;'>Score: {score_val}</span>
-                            </div>
-                            <p style='margin: 5px 0 0 0; font-size: 0.8rem; color: #888888;'>{len(f.row_indices)} rows affected • {f.criticality} Severity</p>
-                        </div>
-                        """, unsafe_allow_html=True)
-                else:
-                    st.success("No issues to fix!")
-                    
-            with r3_col2:
-                # SECTION F: Top Columns to Fix
-                st.markdown("### 🏗️ Top Columns to Fix")
-                st.write("Ranked by number of issue types + affected rows.")
-                
-                column_stats = {}
-                for c in df.columns:
-                    col_findings = [f for f in findings if f.column == c]
-                    if col_findings:
-                        num_types = len(col_findings)
-                        affected_rows = set()
-                        for f in col_findings:
-                            affected_rows.update(f.row_indices)
-                        num_affected = len(affected_rows)
-                        metric = num_types + num_affected
-                        column_stats[c] = {
-                            "Column": c,
-                            "Issue Types": num_types,
-                            "Affected Rows": num_affected,
-                            "Priority Metric": metric
+                    st.dataframe(
+                        pd.DataFrame(drill_rows),
+                        use_container_width=True,
+                        hide_index=True,
+                        column_config={
+                            "Rows Affected": st.column_config.NumberColumn(format="%d"),
                         }
-                        
-                top_cols = sorted(list(column_stats.values()), key=lambda x: x["Priority Metric"], reverse=True)
-                top_cols_df = pd.DataFrame(top_cols).head(5)
-                
-                if not top_cols_df.empty:
-                    col_chart = alt.Chart(top_cols_df).mark_bar().encode(
-                        x=alt.X('Priority Metric:Q', title='Priority Metric (Issue Types + Affected Rows)'),
-                        y=alt.Y('Column:N', sort='-x', title='Dataset Column'),
-                        color=alt.Color('Priority Metric:Q', scale=alt.Scale(scheme='oranges'), legend=None),
-                        tooltip=['Column', 'Issue Types', 'Affected Rows', 'Priority Metric']
-                    ).properties(
-                        height=200
                     )
-                    st.altair_chart(col_chart, use_container_width=True)
-                else:
-                    st.success("All columns are completely clean!")
 
     # --- Tab 1: Dataset Profiler ---
     with tab_profile:

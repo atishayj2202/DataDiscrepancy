@@ -386,6 +386,27 @@ with st.sidebar:
                 "\n\n🎉 **All agents completed successfully!**"
             )
             
+            # Override criticalities based on the specified categories map
+            for f in findings:
+                if f.issue_type == "Null Value":
+                    f.criticality = "Low"
+                elif f.issue_type == "Incomplete Records":
+                    f.criticality = "Medium"
+                elif f.issue_type == "Exact Duplicate Records":
+                    f.criticality = "High"
+                elif f.issue_type == "Near-Duplicate Records":
+                    f.criticality = "Medium"
+                elif f.issue_type == "Inconsistent Casing":
+                    f.criticality = "Low"
+                elif f.issue_type in ["Clear Out-of-Range", "Borderline Out-of-Range (Requires Review)", 
+                                       "Ambiguous Statistical Outlier (Requires Review)", "Confirmed Statistical Outlier", 
+                                       "Multivariate Anomaly (Requires Review)"]:
+                    f.criticality = "High"
+                elif f.issue_type in ["Wrong Data Type", "Format Inconsistency"]:
+                    f.criticality = "Medium"
+                elif f.issue_type == "Whitespace & Encoding":
+                    f.criticality = "Medium"
+
             # Rank findings by criticality (High first) then by rows affected (descending)
             def get_crit_val(crit: str) -> int:
                 crit_map = {"High": 3, "Medium": 2, "Low": 1}
@@ -481,11 +502,11 @@ else:
             with kpi_cols[1]:
                 kpi_card("Impacted Rows", f"{affected_pct:.1f}%", f"{affected_cnt} / {total_rows} rows", "#ff6b00" if affected_cnt > 0 else "#00cc96")
             with kpi_cols[2]:
-                kpi_card("Low Issues", str(low_count), f"{low_pct:.1f}% ({len(low_rows)} / {total_rows} rows)", "#29b5e8")
+                kpi_card("Low Issues", f"{low_pct:.1f}%", f"{len(low_rows)} / {total_rows} rows", "#29b5e8")
             with kpi_cols[3]:
-                kpi_card("Medium Issues", str(med_count), f"{med_pct:.1f}% ({len(med_rows)} / {total_rows} rows)", "#ffaa00")
+                kpi_card("Medium Issues", f"{med_pct:.1f}%", f"{len(med_rows)} / {total_rows} rows", "#ffaa00")
             with kpi_cols[4]:
-                kpi_card("High Issues", str(high_count), f"{high_pct:.1f}% ({len(high_rows)} / {total_rows} rows)", "#ff4b4b")
+                kpi_card("High Issues", f"{high_pct:.1f}%", f"{len(high_rows)} / {total_rows} rows", "#ff4b4b")
                 
             # Classify findings into the 6 categories requested
             categories = {
@@ -583,6 +604,7 @@ else:
                     for f in cat_findings:
                         drill_rows.append({
                             "Column": f.column,
+                            "Issue Type": f.issue_type,
                             "Criticality": f"🔴 {f.criticality}" if f.criticality == "High" else f"🟡 {f.criticality}" if f.criticality == "Medium" else f"🔵 {f.criticality}",
                             "Rows Affected": len(f.row_indices),
                             "Example Value": str(f.example_value),
@@ -998,16 +1020,21 @@ else:
                     
                     cat_findings = active_categories[selected_cat]
                     
-                    # 2. Select Column (from the columns affected by this category)
-                    col_options = sorted(list(set(f.column for f in cat_findings)))
-                    selected_col = st.selectbox(
-                        "Select Column to inspect:",
-                        col_options,
+                    # 2. Select Column & Issue Type to inspect
+                    options_map = {
+                        f"{f.column} — {f.issue_type} ({len(f.row_indices)} rows)": f 
+                        for f in cat_findings
+                    }
+                    sorted_options = sorted(list(options_map.keys()))
+                    
+                    selected_option = st.selectbox(
+                        "Select Column & Issue Type to inspect:",
+                        sorted_options,
                         key="row_inspector_col_select"
                     )
                     
-                    # Find the finding matching this category and column
-                    selected_issue = next(f for f in cat_findings if f.column == selected_col)
+                    # Find the finding matching this selection
+                    selected_issue = options_map[selected_option]
                     
                     # Minimal format description (without description details card)
                     st.markdown(f"**Selected Issue:** {selected_issue.issue_type} | **Column:** `{selected_issue.column}` | **Criticality:** {selected_issue.criticality} | **Rows Affected:** `{len(selected_issue.row_indices)}`")

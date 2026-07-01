@@ -42,7 +42,7 @@ def calculate_quality_score(df, findings) -> Tuple[int, str, Dict[str, float]]:
     med_count = 0
     
     for f in findings:
-        if f.issue_type == "Missing Value":
+        if f.issue_type in ["Null Value", "Incomplete Records"]:
             missing_rows.update(f.row_indices)
         elif "Duplicate" in f.issue_type:
             duplicate_rows.update(f.row_indices)
@@ -481,12 +481,10 @@ else:
             }
             
             for f in findings:
-                if f.issue_type == "Missing Values":
-                    val_str = str(f.example_value).strip()
-                    if val_str in ["?", "-"]:
-                        categories["Incomplete Records"].append(f)
-                    else:
-                        categories["Null Value"].append(f)
+                if f.issue_type == "Null Value":
+                    categories["Null Value"].append(f)
+                elif f.issue_type == "Incomplete Records":
+                    categories["Incomplete Records"].append(f)
                 elif f.issue_type == "Exact Duplicate Records":
                     categories["Duplicate Rows"].append(f)
                 elif f.issue_type == "Near-Duplicate Records":
@@ -506,8 +504,10 @@ else:
                         # Whitespace is usually incomplete formatting or spacing
                         categories["Incomplete Records"].append(f)
                 else:
-                    # Fallback to Data Entry Error (e.g. multivariate anomaly, statistical outliers etc.)
-                    categories["Data Entry Error"].append(f)
+                    # Fallback to Data Entry Error (e.g. multivariate anomaly)
+                    # Don't include null values or incomplete records here
+                    if f.issue_type not in ["Null Value", "Incomplete Records"]:
+                        categories["Data Entry Error"].append(f)
             
             summary_table_data = []
             crit_order = {"High": 3, "Medium": 2, "Low": 1, "Clean": 0}

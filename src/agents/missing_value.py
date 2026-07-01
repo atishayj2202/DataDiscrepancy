@@ -10,9 +10,9 @@ class MissingValueAgent(BaseAgent):
             description="Identifies empty cells, blanks, None, NaN, and placeholder strings like 'N/A' or '-'.",
             ai_level="Rules Only"
         )
-        # Common placeholder representations of null values
-        self.placeholders: Set[str] = {
-            "n/a", "na", "null", "none", "nan", "-", "?", "", "empty", "nil"
+        # Valid non-applicable indicators (considered correct, not flagged)
+        self.valid_na = {
+            "na", "n/a", "nan", "none", "not applicable", "nil", "undefined"
         }
 
     def detect(self, df: pd.DataFrame, columns: List[str] = None, **kwargs) -> List[Discrepancy]:
@@ -24,54 +24,80 @@ class MissingValueAgent(BaseAgent):
                 continue
 
             series = df[col]
-            missing_indices = []
-            example_val = None
+            null_indices = []
+            incomplete_indices = []
+            null_example = None
+            incomplete_example = None
 
             for idx, val in enumerate(series):
-                is_missing = False
-                
-                # Check for standard pandas / numpy nulls
+                # Standard pandas / numpy nulls (NaN, None)
                 if pd.isna(val) or val is None:
-                    is_missing = True
-                    current_val_str = "NaN/None"
-                else:
-                    # Check for string placeholder representations
-                    val_str = str(val).strip()
-                    if val_str.lower() in self.placeholders:
-                        is_missing = True
-                        current_val_str = f"'{val}'"
+                    null_indices.append(idx)
+                    if null_example is None:
+                        null_example = "NaN/None"
+                    continue
+                
+                # Check for string representation
+                val_str = str(val)
+                val_lower = val_str.lower().strip()
+                
+                # If it's a valid NA/NaN indicator, skip it
+                if val_lower in self.valid_na:
+                    continue
 
-                if is_missing:
-                    missing_indices.append(idx)
-                    if example_val is None:
-                        example_val = current_val_str
+                # 1. Null Value: "null" (case-insensitive) or empty string "" (length 0)
+                if val_lower == "null" or val_str == "":
+                    null_indices.append(idx)
+                    if null_example is None:
+                        null_example = "Empty String" if val_str == "" else val_str
+                
+                # 2. Incomplete Records: Space (pure whitespace string of length > 0), "?", "-"
+                elif val_str.strip() == "" and len(val_str) > 0:
+                    incomplete_indices.append(idx)
+                    if incomplete_example is None:
+                        incomplete_example = "Whitespace Space(s)"
+                elif val_str.strip() in ["?", "-"]:
+                    incomplete_indices.append(idx)
+                    if incomplete_example is None:
+                        incomplete_example = f"'{val_str.strip()}'"
 
-            num_missing = len(missing_indices)
-            if num_missing > 0:
+            # Add Null Value discrepancy if found
+            if null_indices:
                 total_rows = len(df)
-                missing_pct = (num_missing / total_rows) * 100
-
-                # Determine criticality based on percentage
-                # flag if null% > 5% (Medium) or > 30% (High), otherwise Low.
-                if missing_pct > 30.0:
-                    criticality = "High"
-                elif missing_pct > 5.0:
-                    criticality = "Medium"
-                else:
-                    criticality = "Low"
-
+                null_pct = (len(null_indices) / total_rows) * 100
+                criticality = "High" if null_pct > 30.0 else "Medium" if null_pct > 5.0 else "Low"
                 interpretation = (
-                    f"Column '{col}' has {num_missing} missing value(s) ({missing_pct:.2f}% of rows). "
-                    f"Suggested action: Impute missing values, check data source, or mark as optional."
+                    f"Column '{col}' has {len(null_indices)} null value(s) ({null_pct:.2f}% of rows). "
+                    f"Suggested action: Impute null values, check data entry interface, or mark as optional."
                 )
-
                 discrepancies.append(
                     Discrepancy(
                         column=col,
-                        row_indices=missing_indices,
-                        issue_type="Missing / Null Values",
+                        row_indices=null_indices,
+                        issue_type="Null Value",
                         criticality=criticality,
-                        example_value=example_val,
+                        example_value=null_example,
+                        interpretation=interpretation,
+                        review_needed=False
+                    )
+                )
+
+            # Add Incomplete Records discrepancy if found
+            if incomplete_indices:
+                total_rows = len(df)
+                inc_pct = (len(incomplete_indices) / total_rows) * 100
+                criticality = "High" if inc_pct > 30.0 else "Medium" if inc_pct > 5.0 else "Low"
+                interpretation = (
+                    f"Column '{col}' has {len(incomplete_indices)} incomplete record placeholder(s) ({inc_pct:.2f}% of rows like space, ?, -). "
+                    f"Suggested action: Correct placeholder entries or verify data collection methods."
+                )
+                discrepancies.append(
+                    Discrepancy(
+                        column=col,
+                        row_indices=incomplete_indices,
+                        issue_type="Incomplete Records",
+                        criticality=criticality,
+                        example_value=incomplete_example,
                         interpretation=interpretation,
                         review_needed=False
                     )

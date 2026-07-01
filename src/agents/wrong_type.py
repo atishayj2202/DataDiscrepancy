@@ -10,6 +10,9 @@ class WrongDataTypeAgent(BaseAgent):
             description="Detects values that do not match the inferred expected data type of the column.",
             ai_level="Rules Only"
         )
+        self.skip_values = {
+            "", "null", "?", "-", "na", "n/a", "nan", "none", "not applicable", "nil", "undefined"
+        }
 
     def _infer_value_type(self, val: Any) -> str:
         """
@@ -114,7 +117,8 @@ class WrongDataTypeAgent(BaseAgent):
             series = df[col]
             
             # Step 1: Infer types for non-null values
-            non_null_vals = series[series.notna() & (series != '')]
+            non_null_mask = series.apply(lambda x: not pd.isna(x) and str(x).lower().strip() not in self.skip_values)
+            non_null_vals = series[non_null_mask]
             if len(non_null_vals) == 0:
                 continue
 
@@ -161,8 +165,8 @@ class WrongDataTypeAgent(BaseAgent):
                 example_val = None
 
                 for idx, val in enumerate(series):
-                    # Skip nulls or empty strings
-                    if pd.isna(val) or str(val).strip() == "":
+                    # Skip nulls, empty strings, and placeholders
+                    if pd.isna(val) or str(val).lower().strip() in self.skip_values:
                         continue
 
                     # If this value cannot be cast to the inferred type

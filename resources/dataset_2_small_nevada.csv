@@ -137,11 +137,11 @@ Year,113 Cause Name,Cause Name,Deaths,Age-adjusted Death Rate
 2011,Cerebrovascular diseases (I60-I69),Stroke,889,36.0
 2011,Chronic lower respiratory diseases (J40-J47),CLRD,1243,49.8
 2011,Diabetes mellitus (E10-E14),Diabetes,400,15.1
-2011,"Diseases of heart (I00-I09,I11,I13,I20-I51)",Heart disease,5043,196.3
-2011,Influenza and pneumonia (J09-J18),Influenza and pneumonia,499,19.7
+2011,,Heart disease,5043,196.3
+2011,"",Influenza and pneumonia,499,19.7
 2011,"Intentional self-harm (suicide) (*U03,X60-X84,Y87.0)",Suicide,516,18.4
-2011,Malignant neoplasms (C00-C97),Cancer,4606,170.2
-2011,"Nephritis, nephrotic syndrome and nephrosis (N00-N07,N17-N19,N25-N27)",Kidney disease,412,16.6
+2011,"-",Cancer,4606,170.2
+2011,"?",Kidney disease,412,16.6
 2012,"Accidents (unintentional injuries) (V01-X59,Y85-Y86)",Unintentional injuries,1177,42.4
 2012,All Causes,All causes,20785,774.6
 2012,Alzheimer's disease (G30),Alzheimer's disease,356,15.3

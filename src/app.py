@@ -434,10 +434,27 @@ else:
             # 1. Calculate score & rating & penalties
             score, rating, penalties = calculate_quality_score(df, findings)
             
-            # Count issues by severity
-            high_count = sum(1 for f in findings if f.criticality == "High")
-            med_count = sum(1 for f in findings if f.criticality == "Medium")
+            # Collect unique row indices per severity level
+            low_rows = set()
+            med_rows = set()
+            high_rows = set()
+            
+            for f in findings:
+                if f.criticality == "Low":
+                    low_rows.update(f.row_indices)
+                elif f.criticality == "Medium":
+                    med_rows.update(f.row_indices)
+                elif f.criticality == "High":
+                    high_rows.update(f.row_indices)
+            
             low_count = sum(1 for f in findings if f.criticality == "Low")
+            med_count = sum(1 for f in findings if f.criticality == "Medium")
+            high_count = sum(1 for f in findings if f.criticality == "High")
+            
+            # Calculate percentages
+            low_pct = (len(low_rows) / total_rows * 100) if total_rows > 0 else 0
+            med_pct = (len(med_rows) / total_rows * 100) if total_rows > 0 else 0
+            high_pct = (len(high_rows) / total_rows * 100) if total_rows > 0 else 0
             
             # Unique overall impacted rows
             all_affected_rows = set()
@@ -464,11 +481,11 @@ else:
             with kpi_cols[1]:
                 kpi_card("Impacted Rows", f"{affected_pct:.1f}%", f"{affected_cnt} / {total_rows} rows", "#ff6b00" if affected_cnt > 0 else "#00cc96")
             with kpi_cols[2]:
-                kpi_card("Low Issues", str(low_count), "Severity: Low", "#29b5e8")
+                kpi_card("Low Issues", str(low_count), f"{low_pct:.1f}% ({len(low_rows)} / {total_rows} rows)", "#29b5e8")
             with kpi_cols[3]:
-                kpi_card("Medium Issues", str(med_count), "Severity: Medium", "#ffaa00")
+                kpi_card("Medium Issues", str(med_count), f"{med_pct:.1f}% ({len(med_rows)} / {total_rows} rows)", "#ffaa00")
             with kpi_cols[4]:
-                kpi_card("High Issues", str(high_count), "Severity: High", "#ff4b4b")
+                kpi_card("High Issues", str(high_count), f"{high_pct:.1f}% ({len(high_rows)} / {total_rows} rows)", "#ff4b4b")
                 
             # Classify findings into the 6 categories requested
             categories = {
@@ -536,8 +553,8 @@ else:
                     
                 summary_table_data.append({
                     "Error Type": cat_name,
-                    "Criticality": crit_badge,
-                    "Impacted Rows": cat_str
+                    "Impacted Rows": cat_str,
+                    "Criticality": crit_badge
                 })
                 
             # SECTION B: Summary Table
@@ -930,30 +947,71 @@ else:
                 st.markdown("### 🔎 Row-Level Inspector")
                 st.write("Inspect the actual rows in the dataset affected by each quality issue.")
                 
-                # Issue selector dropdown
-                selected_issue_idx = st.selectbox(
-                    "Select an issue row to inspect:", 
-                    range(len(findings)), 
-                    format_func=lambda i: f"#{i+1}: {findings[i].column} - {findings[i].issue_type} ({len(findings[i].row_indices)} rows)",
-                    key="row_inspector_select_issue"
-                )
+                # Classify findings into the 6 categories requested
+                categories = {
+                    "Null Value": [],
+                    "Duplicate Rows": [],
+                    "Near to Duplicate Rows": [],
+                    "Inconsistent Casing": [],
+                    "Data Entry Error": [],
+                    "Incomplete Records": []
+                }
                 
-                selected_issue = findings[selected_issue_idx]
+                for f in findings:
+                    if f.issue_type == "Null Value":
+                        categories["Null Value"].append(f)
+                    elif f.issue_type == "Incomplete Records":
+                        categories["Incomplete Records"].append(f)
+                    elif f.issue_type == "Exact Duplicate Records":
+                        categories["Duplicate Rows"].append(f)
+                    elif f.issue_type == "Near-Duplicate Records":
+                        categories["Near to Duplicate Rows"].append(f)
+                    elif f.issue_type == "Inconsistent Casing":
+                        categories["Inconsistent Casing"].append(f)
+                    elif f.issue_type in ["Clear Out-of-Range", "Borderline Out-of-Range (Requires Review)", 
+                                           "Ambiguous Statistical Outlier (Requires Review)", "Confirmed Statistical Outlier", 
+                                           "Wrong Data Type", "Format Inconsistency"]:
+                        categories["Data Entry Error"].append(f)
+                    elif f.issue_type == "Whitespace & Encoding":
+                        # Check if the example contains space placeholders, ?, - or other incomplete symbol
+                        val_str = str(f.example_value).strip()
+                        if val_str in ["?", "-"] or not val_str:
+                            categories["Incomplete Records"].append(f)
+                        else:
+                            categories["Incomplete Records"].append(f)
+                    else:
+                        if f.issue_type not in ["Null Value", "Incomplete Records"]:
+                            categories["Data Entry Error"].append(f)
                 
-                # Issue Summary Card
-                st.markdown(f"""
-                <div class='glass-card' style='padding: 15px; margin-bottom: 20px; border-left: 5px solid {"#ff4b4b" if selected_issue.criticality == "High" else "#ffaa00" if selected_issue.criticality == "Medium" else "#29b5e8"};'>
-                    <h4 style='margin: 0;'>{selected_issue.issue_type}</h4>
-                    <p style='margin: 5px 0; font-size: 0.9rem; color: #888888;'>
-                        <b>Column:</b> <code>{selected_issue.column}</code> | 
-                        <b>Criticality:</b> <span style='color: {"#ff4b4b" if selected_issue.criticality == "High" else "#ffaa00" if selected_issue.criticality == "Medium" else "#29b5e8"}; font-weight: bold;'>{selected_issue.criticality}</span> | 
-                        <b>Rows Affected:</b> {len(selected_issue.row_indices)}
-                    </p>
-                    <p style='margin: 10px 0 0 0; font-size: 0.85rem; line-height: 1.5; color: #666666;'>
-                        <b>Description:</b> {selected_issue.interpretation}
-                    </p>
-                </div>
-                """, unsafe_allow_html=True)
+                # Filter categories that have findings
+                active_categories = {k: v for k, v in categories.items() if len(v) > 0}
+                
+                if not active_categories:
+                    st.info("No active discrepancy categories detected.")
+                else:
+                    # 1. Select Category
+                    selected_cat = st.selectbox(
+                        "Choose Error Type to inspect:",
+                        list(active_categories.keys()),
+                        key="row_inspector_cat_select"
+                    )
+                    
+                    cat_findings = active_categories[selected_cat]
+                    
+                    # 2. Select Column (from the columns affected by this category)
+                    col_options = sorted(list(set(f.column for f in cat_findings)))
+                    selected_col = st.selectbox(
+                        "Select Column to inspect:",
+                        col_options,
+                        key="row_inspector_col_select"
+                    )
+                    
+                    # Find the finding matching this category and column
+                    selected_issue = next(f for f in cat_findings if f.column == selected_col)
+                    
+                    # Minimal format description (without description details card)
+                    st.markdown(f"**Selected Issue:** {selected_issue.issue_type} | **Column:** `{selected_issue.column}` | **Criticality:** {selected_issue.criticality} | **Rows Affected:** `{len(selected_issue.row_indices)}`")
+                    st.markdown("---")
                 
                 # Search within rows
                 search_query = st.text_input("🔍 Search within affected rows (regex supported):", "", key="row_inspector_search")

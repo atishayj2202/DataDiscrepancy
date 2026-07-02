@@ -146,9 +146,11 @@ def render_summary():
         st.markdown("### 🔍 Column Drill Down")
         st.write("Select an error category below to identify the specific columns where this issue resides.")
         
+        drill_down_categories = [k for k in categories.keys() if k not in ["Duplicate Rows", "Near to Duplicate Rows"]]
+        
         selected_cat = st.selectbox(
             "Choose error type to inspect columns:",
-            list(categories.keys()),
+            drill_down_categories,
             key="summary_drill_down_select"
         )
         

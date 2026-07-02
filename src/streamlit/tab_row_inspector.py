@@ -15,8 +15,6 @@ def render_row_inspector():
             
             # Classify findings into categories
             categories = {
-                "Duplicate Rows": [],
-                "Near to Duplicate Rows": [],
                 "Inconsistent Casing": [],
                 "Data Entry Error (Low)": [],
                 "Data Entry Error (Medium)": [],
@@ -27,10 +25,9 @@ def render_row_inspector():
             for f in findings:
                 if f.issue_type in ["Null Value", "Incomplete Records"]:
                     categories["Incomplete Records"].append(f)
-                elif f.issue_type == "Exact Duplicate Records":
-                    categories["Duplicate Rows"].append(f)
-                elif f.issue_type == "Near-Duplicate Records":
-                    categories["Near to Duplicate Rows"].append(f)
+                elif f.issue_type == "Exact Duplicate Records" or f.issue_type == "Near-Duplicate Records":
+                    # Handled separately in dedicated duplicates inspector tab
+                    continue
                 elif f.issue_type == "Inconsistent Casing":
                     categories["Inconsistent Casing"].append(f)
                 elif f.issue_type in ["Clear Out-of-Range", "Borderline Out-of-Range (Requires Review)", 

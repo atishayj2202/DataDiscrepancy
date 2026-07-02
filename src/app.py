@@ -23,7 +23,7 @@ from src.streamlit import (
     render_summary,
     render_row_inspector,
     render_casing_inspector,
-    render_near_duplicate_inspector,
+    render_duplicates_inspector,
     render_more_tab
 )
 
@@ -329,7 +329,7 @@ else:
         "📊 Summary",
         "🔍 Row Inspector",
         "🔤 Inconsistent Casing Inspector",
-        "👯 Near-Duplicate Records Inspector",
+        "👯 Duplicate & Near-Duplicate Records Inspector",
         "➕ More ▾"
     ])
 
@@ -349,9 +349,9 @@ else:
     with tab_casing:
         render_casing_inspector()
 
-    # --- Tab: Near-Duplicate Records Inspector ---
+    # --- Tab: Duplicate & Near-Duplicate Records Inspector ---
     with tab_review:
-        render_near_duplicate_inspector()
+        render_duplicates_inspector()
 
     # --- Tab: More ▾ ---
     with tab_more:

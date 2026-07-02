@@ -431,14 +431,13 @@ if st.session_state.df is None:
     """, unsafe_allow_html=True)
 else:
     # Define stable tabs visible at all times in the requested order
-    tab_profile, tab_summary, tab_row_inspector, tab_audit, tab_visual, tab_review, tab_doc = st.tabs([
+    tab_profile, tab_summary, tab_row_inspector, tab_casing, tab_review, tab_more = st.tabs([
         "📊 Dataset Profiler",
         "📊 Summary",
         "🔍 Row Inspector",
-        "🔍 Quality Audit Findings", 
-        "📈 Visualization",
-        "🕵️‍♂️ Flagged for Review (No-AI)",
-        "📚 Documentation"
+        "🔤 Inconsistent Casing Inspector",
+        "👯 Near-Duplicate Records Inspector",
+        "➕ More ▾"
     ])
         
     # --- Tab: Summary ---
@@ -500,18 +499,20 @@ else:
             with kpi_cols[1]:
                 kpi_card("Impacted Rows", f"{affected_pct:.1f}%", f"{affected_cnt} / {total_rows} rows", "#ff6b00" if affected_cnt > 0 else "#00cc96")
             with kpi_cols[2]:
-                kpi_card("Low Issues", f"{low_pct:.1f}%", f"{len(low_rows)} / {total_rows} rows", "#29b5e8")
+                kpi_card("Rows with Low Critical Issues", f"{low_pct:.1f}%", f"{len(low_rows)} / {total_rows} rows", "#29b5e8")
             with kpi_cols[3]:
-                kpi_card("Medium Issues", f"{med_pct:.1f}%", f"{len(med_rows)} / {total_rows} rows", "#ffaa00")
+                kpi_card("Rows with Medium Critical Issues", f"{med_pct:.1f}%", f"{len(med_rows)} / {total_rows} rows", "#ffaa00")
             with kpi_cols[4]:
-                kpi_card("High Issues", f"{high_pct:.1f}%", f"{len(high_rows)} / {total_rows} rows", "#ff4b4b")
+                kpi_card("Rows with High Critical Issues", f"{high_pct:.1f}%", f"{len(high_rows)} / {total_rows} rows", "#ff4b4b")
                 
-            # Classify findings into the 5 categories requested
+            # Classify findings into categories (breaking Data Entry Error into Low, Medium, High)
             categories = {
                 "Duplicate Rows": [],
                 "Near to Duplicate Rows": [],
                 "Inconsistent Casing": [],
-                "Data Entry Error": [],
+                "Data Entry Error (Low)": [],
+                "Data Entry Error (Medium)": [],
+                "Data Entry Error (High)": [],
                 "Incomplete Records": []
             }
             
@@ -527,7 +528,12 @@ else:
                 elif f.issue_type in ["Clear Out-of-Range", "Borderline Out-of-Range (Requires Review)", 
                                        "Ambiguous Statistical Outlier (Requires Review)", "Confirmed Statistical Outlier", 
                                        "Wrong Data Type", "Format Inconsistency"]:
-                    categories["Data Entry Error"].append(f)
+                    if f.criticality == "High":
+                        categories["Data Entry Error (High)"].append(f)
+                    elif f.criticality == "Medium":
+                        categories["Data Entry Error (Medium)"].append(f)
+                    else:
+                        categories["Data Entry Error (Low)"].append(f)
                 elif f.issue_type == "Whitespace & Encoding":
                     # Check if the example contains space placeholders, ?, - or other incomplete symbol
                     val_str = str(f.example_value).strip()
@@ -537,10 +543,15 @@ else:
                         # Whitespace is usually incomplete formatting or spacing
                         categories["Incomplete Records"].append(f)
                 else:
-                    # Fallback to Data Entry Error (e.g. multivariate anomaly)
+                    # Fallback to Data Entry Error
                     # Don't include null values or incomplete records here
                     if f.issue_type not in ["Null Value", "Incomplete Records"]:
-                        categories["Data Entry Error"].append(f)
+                        if f.criticality == "High":
+                            categories["Data Entry Error (High)"].append(f)
+                        elif f.criticality == "Medium":
+                            categories["Data Entry Error (Medium)"].append(f)
+                        else:
+                            categories["Data Entry Error (Low)"].append(f)
             
             summary_table_data = []
             crit_order = {"High": 3, "Medium": 2, "Low": 1, "Clean": 0}
@@ -681,7 +692,7 @@ else:
                         st.dataframe(top_df, width="stretch", hide_index=True)
 
     # --- Tab 2: Quality Audit Findings ---
-    with tab_audit:
+    def render_quality_audit_findings():
         if not st.session_state.audit_run:
             st.info("Please click 'Run Quality Audit' in the sidebar to scan your dataset.")
         else:
@@ -811,7 +822,7 @@ else:
                         st.info("No columns affected matching the active filters.")
 
     # --- Tab 3: Visualization ---
-    with tab_visual:
+    def render_visualization():
         if not st.session_state.audit_run:
             st.info("Please click 'Run Quality Audit' in the sidebar to visualize findings.")
         else:
@@ -964,12 +975,14 @@ else:
                 st.markdown("### 🔎 Row-Level Inspector")
                 st.write("Inspect the actual rows in the dataset affected by each quality issue.")
                 
-                # Classify findings into the 5 categories requested
+                # Classify findings into categories (breaking Data Entry Error into Low, Medium, High)
                 categories = {
                     "Duplicate Rows": [],
                     "Near to Duplicate Rows": [],
                     "Inconsistent Casing": [],
-                    "Data Entry Error": [],
+                    "Data Entry Error (Low)": [],
+                    "Data Entry Error (Medium)": [],
+                    "Data Entry Error (High)": [],
                     "Incomplete Records": []
                 }
                 
@@ -985,17 +998,28 @@ else:
                     elif f.issue_type in ["Clear Out-of-Range", "Borderline Out-of-Range (Requires Review)", 
                                            "Ambiguous Statistical Outlier (Requires Review)", "Confirmed Statistical Outlier", 
                                            "Wrong Data Type", "Format Inconsistency"]:
-                        categories["Data Entry Error"].append(f)
+                        if f.criticality == "High":
+                            categories["Data Entry Error (High)"].append(f)
+                        elif f.criticality == "Medium":
+                            categories["Data Entry Error (Medium)"].append(f)
+                        else:
+                            categories["Data Entry Error (Low)"].append(f)
                     elif f.issue_type == "Whitespace & Encoding":
                         # Check if the example contains space placeholders, ?, - or other incomplete symbol
                         val_str = str(f.example_value).strip()
                         if val_str in ["?", "-"] or not val_str:
                             categories["Incomplete Records"].append(f)
                         else:
+                            # Whitespace is usually incomplete formatting or spacing
                             categories["Incomplete Records"].append(f)
                     else:
                         if f.issue_type not in ["Null Value", "Incomplete Records"]:
-                            categories["Data Entry Error"].append(f)
+                            if f.criticality == "High":
+                                categories["Data Entry Error (High)"].append(f)
+                            elif f.criticality == "Medium":
+                                categories["Data Entry Error (Medium)"].append(f)
+                            else:
+                                categories["Data Entry Error (Low)"].append(f)
                 
                 # Filter categories that have findings
                 active_categories = {k: v for k, v in categories.items() if len(v) > 0}
@@ -1073,7 +1097,7 @@ else:
                 st.dataframe(affected_df.iloc[start_idx:end_idx].astype(str), width="stretch")
 
     # --- Tab: Documentation ---
-    with tab_doc:
+    def render_documentation():
         st.markdown("### 📚 System Documentation & Methodology")
         st.write("Detailed explanation of quality score formulas, criticality ratings, and agent algorithms.")
         
@@ -1195,23 +1219,73 @@ else:
         | **Near-Duplicate** | Sorted-Adjacent RapidFuzz Token Match | 🟣 Requires Review |
         """)
 
-    # --- Tab: Flagged for Review (No-AI) ---
+    # --- Tab: Inconsistent Casing Inspector ---
+    with tab_casing:
+        if not st.session_state.audit_run:
+            st.info("Please click 'Run Quality Audit' in the sidebar to inspect casing inconsistencies.")
+        else:
+            df = st.session_state.df
+            findings = st.session_state.discrepancies
+            casing_findings = [f for f in findings if f.issue_type == "Inconsistent Casing"]
+            
+            if not casing_findings:
+                st.success("🎉 All columns have consistent casing!")
+            else:
+                selected_casing_col = st.selectbox(
+                    "Select Column with Inconsistent Casing:",
+                    [f.column for f in casing_findings],
+                    key="casing_col_select"
+                )
+                
+                finding = next(f for f in casing_findings if f.column == selected_casing_col)
+                
+                # Run grouping logic to map incorrect variants to dominant one
+                col_series = df[finding.column].astype(str)
+                from collections import defaultdict
+                groups = defaultdict(lambda: defaultdict(list))
+                for idx, val in col_series.items():
+                    stripped = val.strip()
+                    if stripped:
+                        groups[stripped.lower()][stripped].append(idx)
+                        
+                casing_corrections = {}
+                for lower_val, variants in groups.items():
+                    if len(variants) > 1:
+                        dominant_variant = max(variants.keys(), key=lambda k: len(variants[k]))
+                        for variant in variants.keys():
+                            if variant != dominant_variant:
+                                casing_corrections[variant] = dominant_variant
+                                
+                rows_data = []
+                for idx in finding.row_indices:
+                    current_val = col_series.loc[idx]
+                    expected_val = casing_corrections.get(current_val.strip(), "N/A")
+                    rows_data.append({
+                        "Row Index": idx,
+                        "Current Value": current_val,
+                        "Correct (Expected) Value": expected_val
+                    })
+                corrections_df = pd.DataFrame(rows_data)
+                
+                st.markdown(f"### 📋 Capitalization updates needed for `{finding.column}`")
+                st.dataframe(corrections_df, use_container_width=True, hide_index=True)
+                
+                st.markdown("### 🔍 Full Rows detail")
+                st.dataframe(df.loc[finding.row_indices], use_container_width=True)
+
+    # --- Tab: Near-Duplicate Records Inspector ---
     with tab_review:
         if not st.session_state.audit_run:
             st.info("Run Quality Audit first to discover issues requiring review.")
         else:
-            review_findings = [f for f in st.session_state.discrepancies if f.review_needed]
+            findings = st.session_state.discrepancies
+            near_dupe_findings = [f for f in findings if f.issue_type == "Near-Duplicate Records"]
             
-            if not review_findings:
-                st.success("✅ No issues require manual review in this dataset!")
+            if not near_dupe_findings:
+                st.success("✅ No near-duplicate records require manual review in this dataset!")
             else:
-                st.markdown("### 🕵️‍♂️ Flagged for Review (AI / Human Decision Needed)")
+                st.markdown("### 👯 Near-Duplicate Records Inspector")
                 st.info("Because AI connection is bypassed, the system flags borderline entries, outliers, or duplicate candidates. These require manual review to assess validity.")
-                
-                # Split review items by type
-                near_dupe_findings = [f for f in review_findings if "Duplicate" in f.issue_type]
-                borderline_findings = [f for f in review_findings if "Borderline" in f.issue_type]
-                statistical_findings = [f for f in review_findings if "Multivariate" in f.issue_type or "Outlier" in f.issue_type]
                 
                 if near_dupe_findings:
                     st.markdown("#### 👥 Near-Duplicate Record Candidates")
@@ -1226,29 +1300,23 @@ else:
                             idx2 = indices[i+1]
                             
                             st.markdown(f"**Duplicate Pair Candidate:** (Rows {idx1} and {idx2})")
-                            st.dataframe(st.session_state.df.loc[[idx1, idx2]].astype(str), width="stretch")
+                            st.dataframe(st.session_state.df.loc[[idx1, idx2]].astype(str), use_container_width=True)
                         st.markdown("---")
 
-                if borderline_findings or statistical_findings:
-                    st.markdown("#### 📈 Borderline Out-of-Range & Statistical Outliers")
-                    
-                    all_outlier_items = []
-                    for f in borderline_findings + statistical_findings:
-                        for row_idx in f.row_indices:
-                            all_outlier_items.append((f.column, row_idx, f.issue_type, f.interpretation))
-                            
-                    if all_outlier_items:
-                        st.write("The following borderline values or multivariate anomalies were flagged:")
-                        
-                        outlier_data = []
-                        for col, row_idx, issue_type, interpretation in all_outlier_items:
-                            val = st.session_state.df.at[row_idx, col] if col != "Table Level" else "Row Level"
-                            outlier_data.append({
-                                "Row Index": row_idx,
-                                "Column": col,
-                                "Value": val,
-                                "Issue Type": issue_type,
-                                "Details": interpretation
-                            })
-                        
-                        st.dataframe(pd.DataFrame(outlier_data), width="stretch", hide_index=True)
+    # --- Tab: More ▾ ---
+    with tab_more:
+        if not st.session_state.audit_run:
+            st.info("Please click 'Run Quality Audit' in the sidebar to view further details.")
+        else:
+            more_option = st.selectbox(
+                "Select Section to View:",
+                ["🔍 Quality Audit Findings", "📈 Visualization", "📚 Documentation"],
+                key="more_tabs_select"
+            )
+            
+            if more_option == "🔍 Quality Audit Findings":
+                render_quality_audit_findings()
+            elif more_option == "📈 Visualization":
+                render_visualization()
+            elif more_option == "📚 Documentation":
+                render_documentation()

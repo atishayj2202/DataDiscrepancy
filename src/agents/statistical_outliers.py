@@ -20,7 +20,7 @@ class StatisticalOutliersAgent(BaseAgent):
         )
 
     def detect(self, df: pd.DataFrame, columns: List[str] = None, **kwargs) -> List[Discrepancy]:
-        discrepancies = []
+        return []
         target_cols = columns if columns is not None else df.columns.tolist()
         
         # Identify numeric columns in target list

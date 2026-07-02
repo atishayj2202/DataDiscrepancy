@@ -88,34 +88,31 @@ class OutOfRangeAgent(BaseAgent):
                             if example_clear is None:
                                 example_clear = f"{val} (Limit: {min_limit}-{max_limit})"
             else:
-                # --- Statistical Limits Check (IQR & Z-score combined) ---
+                # --- Statistical Limits Check (IQR vs Z-score based on distribution normality) ---
+                mean = clean_series.mean()
+                std = clean_series.std()
+                skew = clean_series.skew()
+                
+                # Check normality based on skewness (absolute skewness <= 1.0 represents normal/symmetric distribution)
+                is_normal = True if pd.isna(skew) or abs(skew) <= 1.0 else False
+                
                 q1 = clean_series.quantile(0.25)
                 q3 = clean_series.quantile(0.75)
                 iqr = q3 - q1
                 
-                iqr_lower = q1 - 1.5 * iqr
-                iqr_upper = q3 + 1.5 * iqr
-                iqr_border_lower = q1 - 3.0 * iqr
-                iqr_border_upper = q3 + 3.0 * iqr
+                # Bounds for IQR
+                iqr_border_lower = q1 - 1.5 * iqr
+                iqr_border_upper = q3 + 1.5 * iqr
+                iqr_clear_lower = q1 - 3.0 * iqr
+                iqr_clear_upper = q3 + 3.0 * iqr
                 
-                mean = clean_series.mean()
-                std = clean_series.std()
-                
-                if std > 0:
-                    # Let's check each value
+                if is_normal and std > 0:
+                    # NORMAL/SYMMETRIC DATA: Use Z-score logic only
                     for idx, val in clean_series.items():
                         z_score = abs((val - mean) / std)
                         
-                        # We flag if it violates either IQR or Z-score > 3
-                        is_out_iqr = val < iqr_lower or val > iqr_upper
-                        is_out_z = z_score > 3.0
-                        
-                        if is_out_iqr or is_out_z:
-                            # Classify as borderline vs clear
-                            # Clear violation if Z-score > 4.5 or value is way outside IQR bounds (3.0 * IQR)
-                            is_clear_violation = (z_score > 4.5) or (val < iqr_border_lower) or (val > iqr_border_upper)
-                            
-                            if is_clear_violation:
+                        if z_score > 2.5:
+                            if z_score > 3.5:
                                 clear_violators.append(idx)
                                 if example_clear is None:
                                     example_clear = f"{val} (Z-score: {z_score:.1f})"
@@ -123,6 +120,19 @@ class OutOfRangeAgent(BaseAgent):
                                 borderline_violators.append(idx)
                                 if example_border is None:
                                     example_border = f"{val} (Z-score: {z_score:.1f})"
+                else:
+                    # SKEWED DATA (or fallback if std is 0): Use IQR logic only
+                    if iqr > 0:
+                        for idx, val in clean_series.items():
+                            if val < iqr_border_lower or val > iqr_border_upper:
+                                if val < iqr_clear_lower or val > iqr_clear_upper:
+                                    clear_violators.append(idx)
+                                    if example_clear is None:
+                                        example_clear = f"{val} (IQR boundary check)"
+                                else:
+                                    borderline_violators.append(idx)
+                                    if example_border is None:
+                                        example_border = f"{val} (IQR boundary check)"
 
             # Register clear out-of-range discrepancies
             if clear_violators:
@@ -136,7 +146,8 @@ class OutOfRangeAgent(BaseAgent):
                 if logical_limits:
                     interpretation += f"These values violate the configured limits of [{logical_limits[0]}, {logical_limits[1]}]."
                 else:
-                    interpretation += "These values are extreme outliers (Z-score > 4.5 or way outside IQR bounds)."
+                    method_used = "Z-score > 3.5 (Normal/Symmetric Data)" if is_normal else "IQR > 3.0 (Skewed Data)"
+                    interpretation += f"These values are extreme outliers based on {method_used}."
 
                 discrepancies.append(
                     Discrepancy(

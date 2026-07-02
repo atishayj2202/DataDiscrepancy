@@ -46,17 +46,20 @@ class InconsistentCasingAgent(BaseAgent):
             # Find groups with capitalization collisions
             for lower_val, variants in groups.items():
                 if len(variants) > 1:
-                    # We have inconsistent casing for this logical value!
+                    total_group_count = sum(len(indices) for indices in variants.values())
                     # Find the dominant casing variant
                     dominant_variant = max(variants.keys(), key=lambda k: len(variants[k]))
+                    dominant_count = len(variants[dominant_variant])
                     
-                    # All other variants are inconsistent
-                    for variant, indices in variants.items():
-                        if variant != dominant_variant:
-                            inconsistent_indices.extend(indices)
-                            total_cases_flagged += len(indices)
-                            if example_val is None:
-                                example_val = f"'{variant}' (expected '{dominant_variant}')"
+                    # Only flag if dominant variant is >= 50% of the group
+                    if (dominant_count / total_group_count) >= 0.50:
+                        # All other variants are inconsistent
+                        for variant, indices in variants.items():
+                            if variant != dominant_variant:
+                                inconsistent_indices.extend(indices)
+                                total_cases_flagged += len(indices)
+                                if example_val is None:
+                                    example_val = f"'{variant}' (expected '{dominant_variant}')"
 
             if inconsistent_indices:
                 num_affected = len(inconsistent_indices)

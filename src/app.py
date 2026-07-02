@@ -1251,10 +1251,13 @@ else:
                 casing_corrections = {}
                 for lower_val, variants in groups.items():
                     if len(variants) > 1:
+                        total_group_count = sum(len(indices) for indices in variants.values())
                         dominant_variant = max(variants.keys(), key=lambda k: len(variants[k]))
-                        for variant in variants.keys():
-                            if variant != dominant_variant:
-                                casing_corrections[variant] = dominant_variant
+                        dominant_count = len(variants[dominant_variant])
+                        if (dominant_count / total_group_count) >= 0.50:
+                            for variant in variants.keys():
+                                if variant != dominant_variant:
+                                    casing_corrections[variant] = dominant_variant
                                 
                 rows_data = []
                 for idx in finding.row_indices:

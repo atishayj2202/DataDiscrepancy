@@ -15,7 +15,6 @@ from src.agents import (
     OutOfRangeAgent,
     WhitespaceEncodingAgent,
     InconsistentCasingAgent,
-    StatisticalOutliersAgent,
     Discrepancy
 )
 from src.streamlit import (
@@ -175,8 +174,7 @@ with st.sidebar:
             "format_inconsistency": st.checkbox("Format Inconsistency", value=True),
             "out_of_range": st.checkbox("Out-of-Range Values", value=True),
             "whitespace": st.checkbox("Whitespace & Encoding", value=True),
-            "casing": st.checkbox("Inconsistent Casing", value=True),
-            "outliers": st.checkbox("Statistical Outliers", value=True)
+            "casing": st.checkbox("Inconsistent Casing", value=True)
         }
         
         # Custom limits config helper
@@ -230,8 +228,6 @@ with st.sidebar:
                 agents.append(WhitespaceEncodingAgent())
             if agents_enabled["casing"]:
                 agents.append(InconsistentCasingAgent())
-            if agents_enabled["outliers"]:
-                agents.append(StatisticalOutliersAgent())
             
             findings: List[Discrepancy] = []
             

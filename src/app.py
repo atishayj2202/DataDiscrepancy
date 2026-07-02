@@ -1288,23 +1288,13 @@ else:
                 st.success("✅ No near-duplicate records require manual review in this dataset!")
             else:
                 st.markdown("### 👯 Near-Duplicate Records Inspector")
-                st.info("Because AI connection is bypassed, the system flags borderline entries, outliers, or duplicate candidates. These require manual review to assess validity.")
+                st.info("The following groups of records are extremely similar (e.g. minor typos, spelling variations) and may be duplicates. Review them below:")
                 
-                if near_dupe_findings:
-                    st.markdown("#### 👥 Near-Duplicate Record Candidates")
-                    for finding in near_dupe_findings:
-                        indices = finding.row_indices
-                        st.markdown(finding.interpretation)
-                        # Display pairs
-                        for i in range(0, len(indices), 2):
-                            if i + 1 >= len(indices):
-                                break
-                            idx1 = indices[i]
-                            idx2 = indices[i+1]
-                            
-                            st.markdown(f"**Duplicate Pair Candidate:** (Rows {idx1} and {idx2})")
-                            st.dataframe(st.session_state.df.loc[[idx1, idx2]].astype(str), use_container_width=True)
-                        st.markdown("---")
+                for idx, finding in enumerate(near_dupe_findings):
+                    indices = finding.row_indices
+                    st.markdown(f"**Near-Duplicate Group #{idx+1} (Similarity Match):**")
+                    st.dataframe(st.session_state.df.loc[indices].astype(str), use_container_width=True)
+                    st.markdown("---")
 
     # --- Tab: More ▾ ---
     with tab_more:

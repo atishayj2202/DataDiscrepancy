@@ -18,31 +18,38 @@ class DuplicateRecordsAgent(BaseAgent):
             return discrepancies
 
         # --- Phase 1: Exact Duplicates ---
-        # We look across all columns or the specified columns
         target_cols = columns if columns is not None else df.columns.tolist()
         
-        # Check for exact duplicates
-        exact_dup_mask = df.duplicated(subset=target_cols, keep=False)
-        exact_dup_indices = df.index[exact_dup_mask].tolist()
-        
-        if exact_dup_indices:
-            # Group exact duplicates to show as example
-            # We can find one example row representation
-            example_idx = exact_dup_indices[0]
+        # Group exact duplicates by matching values
+        exact_groups = []
+        exact_map = {}
+        for idx, row in df.iterrows():
+            # Build a tuple representation of target columns to hash and group
+            val_tuple = tuple(str(row[col]) for col in target_cols)
+            if val_tuple not in exact_map:
+                exact_map[val_tuple] = []
+            exact_map[val_tuple].append(idx)
+            
+        for val_tuple, indices in exact_map.items():
+            if len(indices) > 1:
+                exact_groups.append(indices)
+
+        for g_idx, indices in enumerate(exact_groups):
+            example_idx = indices[0]
             example_row = df.loc[example_idx, target_cols].to_dict()
             example_str = ", ".join(f"{k}: '{v}'" for k, v in example_row.items() if pd.notna(v))
             
             interpretation = (
-                f"Found {len(exact_dup_indices)} rows that are exact duplicates "
-                f"based on the inspected columns. Suggested action: Deduplicate these rows."
+                f"Found {len(indices)} rows in Group #{g_idx+1} that are exact duplicates of each other. "
+                f"Suggested action: Keep one authoritative row and deduplicate the rest."
             )
             
             discrepancies.append(
                 Discrepancy(
                     column="Table Level",
-                    row_indices=exact_dup_indices,
+                    row_indices=indices,
                     issue_type="Exact Duplicate Records",
-                    criticality="Medium",
+                    criticality="High",
                     example_value=f"Row {example_idx}: {example_str[:120]}...",
                     interpretation=interpretation,
                     review_needed=False
@@ -50,25 +57,16 @@ class DuplicateRecordsAgent(BaseAgent):
             )
 
         # --- Phase 2: Near-Duplicates ---
-        # Near duplicates normally require AI to resolve authoritativeness.
-        # We find candidates by concatenating text fields, sorting them, and comparing adjacent rows.
-        # This keeps the comparison O(N log N) instead of O(N^2).
-        
-        # Select columns to construct the text signature
-        # We prefer string and categorical columns
         text_cols = [
             col for col in target_cols 
             if df[col].dtype == 'object' or isinstance(df[col].dtype, pd.CategoricalDtype)
         ]
-        
-        # If there are no text columns, fall back to all target columns
         if not text_cols:
             text_cols = target_cols
 
         # Create row signatures
         signatures = []
         for idx, row in df.iterrows():
-            # Combine non-null text columns into a single normalized string
             sig_parts = []
             for col in text_cols:
                 val = row[col]
@@ -79,69 +77,69 @@ class DuplicateRecordsAgent(BaseAgent):
         # Sort signatures alphabetically to place similar signatures near each other
         signatures.sort(key=lambda x: x[1])
 
-        near_dup_groups = []
-        visited_indices: Set[int] = set()
+        # Build adjacency list for similar signatures
+        adj_list = {idx: set() for idx, _ in signatures}
 
         for i in range(len(signatures) - 1):
             idx1, sig1 = signatures[i]
             idx2, sig2 = signatures[i+1]
 
-            # Skip if either is empty
             if not sig1 or not sig2:
                 continue
 
-            # Skip if they are part of exact duplicates (handled in phase 1) or already grouped
-            if idx1 in visited_indices or idx2 in visited_indices:
-                continue
-                
-            # If the signatures are identical, it is an exact duplicate (already handled)
+            # Skip if they have identical signature (exact duplicate, handled in Phase 1)
             if sig1 == sig2:
                 continue
 
             # Compute similarity
             sim = fuzz.token_sort_ratio(sig1, sig2)
             if sim >= similarity_threshold:
-                # We found a near-duplicate pair
-                near_dup_groups.append((idx1, idx2, sim))
-                visited_indices.add(idx1)
-                visited_indices.add(idx2)
+                adj_list[idx1].add(idx2)
+                adj_list[idx2].add(idx1)
 
-        if near_dup_groups:
-            # Let's register a discrepancy for near-duplicates
-            # We can create a consolidated report, or one discrepancy per pair.
-            # Showing them grouped together is very nice.
-            all_near_dup_indices = []
-            for idx1, idx2, _ in near_dup_groups:
-                all_near_dup_indices.extend([idx1, idx2])
+        # Find connected components (groups of near-duplicates)
+        near_groups = []
+        visited = set()
+        for idx, _ in signatures:
+            if idx in visited or not adj_list[idx]:
+                continue
+            
+            comp = []
+            queue = [idx]
+            visited.add(idx)
+            while queue:
+                curr = queue.pop(0)
+                comp.append(curr)
+                for neighbor in adj_list[curr]:
+                    if neighbor not in visited:
+                        visited.add(neighbor)
+                        queue.append(neighbor)
+            if len(comp) > 1:
+                near_groups.append(comp)
 
-            # Provide one or two pairs as examples
+        for g_idx, indices in enumerate(near_groups):
             examples = []
-            for idx1, idx2, sim in near_dup_groups[:3]:
-                row1_vals = df.loc[idx1, text_cols].to_dict()
-                row2_vals = df.loc[idx2, text_cols].to_dict()
-                row1_str = ", ".join(f"{k}: '{v}'" for k, v in row1_vals.items() if pd.notna(v))
-                row2_str = ", ".join(f"{k}: '{v}'" for k, v in row2_vals.items() if pd.notna(v))
-                examples.append(f"Pair (Sim {sim:.0f}%):\n  - Row {idx1}: {row1_str[:80]}...\n  - Row {idx2}: {row2_str[:80]}...")
-
+            for idx in indices[:3]:
+                row_vals = df.loc[idx, text_cols].to_dict()
+                row_str = ", ".join(f"{k}: '{v}'" for k, v in row_vals.items() if pd.notna(v))
+                examples.append(f"  - Row {idx}: {row_str[:80]}...")
+            
             example_value = "\n".join(examples)
             interpretation = (
-                f"Found {len(near_dup_groups)} pairs of near-duplicate records (similarity >= {similarity_threshold}%). "
-                f"Rules identified these candidates, but AI is required to decide which record is authoritative."
+                f"Found a group of {len(indices)} near-duplicate records (similarity match). "
+                f"Rules identified these candidates, but manual review is required to choose the authoritative record."
             )
 
             discrepancies.append(
                 Discrepancy(
                     column="Table Level",
-                    row_indices=all_near_dup_indices,
+                    row_indices=indices,
                     issue_type="Near-Duplicate Records",
                     criticality="Medium",
                     example_value=example_value,
                     interpretation=interpretation,
                     review_needed=True,
                     review_notes=(
-                        "AI Resolution Bypassed: Normally, a specialized LLM would be called on "
-                        "each near-duplicate pair to determine 'Which row is authoritative?' based on "
-                        "recency, completeness, and context. Bypassed due to API key budget constraints. "
                         "Please manually review these rows to determine the primary record."
                     )
                 )

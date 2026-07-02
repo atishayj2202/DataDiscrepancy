@@ -388,9 +388,7 @@ with st.sidebar:
             
             # Override criticalities based on the specified categories map
             for f in findings:
-                if f.issue_type == "Null Value":
-                    f.criticality = "Low"
-                elif f.issue_type == "Incomplete Records":
+                if f.issue_type in ["Null Value", "Incomplete Records"]:
                     f.criticality = "Medium"
                 elif f.issue_type == "Exact Duplicate Records":
                     f.criticality = "High"
@@ -508,9 +506,8 @@ else:
             with kpi_cols[4]:
                 kpi_card("High Issues", f"{high_pct:.1f}%", f"{len(high_rows)} / {total_rows} rows", "#ff4b4b")
                 
-            # Classify findings into the 6 categories requested
+            # Classify findings into the 5 categories requested
             categories = {
-                "Null Value": [],
                 "Duplicate Rows": [],
                 "Near to Duplicate Rows": [],
                 "Inconsistent Casing": [],
@@ -519,9 +516,7 @@ else:
             }
             
             for f in findings:
-                if f.issue_type == "Null Value":
-                    categories["Null Value"].append(f)
-                elif f.issue_type == "Incomplete Records":
+                if f.issue_type in ["Null Value", "Incomplete Records"]:
                     categories["Incomplete Records"].append(f)
                 elif f.issue_type == "Exact Duplicate Records":
                     categories["Duplicate Rows"].append(f)
@@ -969,9 +964,8 @@ else:
                 st.markdown("### 🔎 Row-Level Inspector")
                 st.write("Inspect the actual rows in the dataset affected by each quality issue.")
                 
-                # Classify findings into the 6 categories requested
+                # Classify findings into the 5 categories requested
                 categories = {
-                    "Null Value": [],
                     "Duplicate Rows": [],
                     "Near to Duplicate Rows": [],
                     "Inconsistent Casing": [],
@@ -980,9 +974,7 @@ else:
                 }
                 
                 for f in findings:
-                    if f.issue_type == "Null Value":
-                        categories["Null Value"].append(f)
-                    elif f.issue_type == "Incomplete Records":
+                    if f.issue_type in ["Null Value", "Incomplete Records"]:
                         categories["Incomplete Records"].append(f)
                     elif f.issue_type == "Exact Duplicate Records":
                         categories["Duplicate Rows"].append(f)

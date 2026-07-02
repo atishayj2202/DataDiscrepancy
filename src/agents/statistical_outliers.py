@@ -123,7 +123,7 @@ class StatisticalOutliersAgent(BaseAgent):
 
         # --- Phase 2: Multivariate (Multi-Column) Outliers ---
         # Run Isolation Forest across all numeric columns to find multivariate anomalies
-        if HAS_SKLEARN and len(numeric_cols) >= 2 and len(df) >= 15:
+        if False:  # Deactivated Multivariate Analysis
             try:
                 # Prepare data: impute missing values with median and scale
                 prep_df = df[numeric_cols].copy()

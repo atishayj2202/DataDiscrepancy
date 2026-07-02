@@ -24,17 +24,15 @@ class MissingValueAgent(BaseAgent):
                 continue
 
             series = df[col]
-            null_indices = []
             incomplete_indices = []
-            null_example = None
-            incomplete_example = None
+            example_val = None
 
             for idx, val in enumerate(series):
                 # Standard pandas / numpy nulls (NaN, None)
                 if pd.isna(val) or val is None:
-                    null_indices.append(idx)
-                    if null_example is None:
-                        null_example = "NaN/None"
+                    incomplete_indices.append(idx)
+                    if example_val is None:
+                        example_val = "NaN/None"
                     continue
                 
                 # Check for string representation
@@ -47,40 +45,19 @@ class MissingValueAgent(BaseAgent):
 
                 # 1. Null Value: "null" (case-insensitive) or empty string "" (length 0)
                 if val_lower == "null" or val_str == "":
-                    null_indices.append(idx)
-                    if null_example is None:
-                        null_example = "Empty String" if val_str == "" else val_str
+                    incomplete_indices.append(idx)
+                    if example_val is None:
+                        example_val = "Empty String" if val_str == "" else val_str
                 
                 # 2. Incomplete Records: Space (pure whitespace string of length > 0), "?", "-"
                 elif val_str.strip() == "" and len(val_str) > 0:
                     incomplete_indices.append(idx)
-                    if incomplete_example is None:
-                        incomplete_example = "Whitespace Space(s)"
+                    if example_val is None:
+                        example_val = "Whitespace Space(s)"
                 elif val_str.strip() in ["?", "-"]:
                     incomplete_indices.append(idx)
-                    if incomplete_example is None:
-                        incomplete_example = f"'{val_str.strip()}'"
-
-            # Add Null Value discrepancy if found
-            if null_indices:
-                total_rows = len(df)
-                null_pct = (len(null_indices) / total_rows) * 100
-                criticality = "High" if null_pct > 30.0 else "Medium" if null_pct > 5.0 else "Low"
-                interpretation = (
-                    f"Column '{col}' has {len(null_indices)} null value(s) ({null_pct:.2f}% of rows). "
-                    f"Suggested action: Impute null values, check data entry interface, or mark as optional."
-                )
-                discrepancies.append(
-                    Discrepancy(
-                        column=col,
-                        row_indices=null_indices,
-                        issue_type="Null Value",
-                        criticality=criticality,
-                        example_value=null_example,
-                        interpretation=interpretation,
-                        review_needed=False
-                    )
-                )
+                    if example_val is None:
+                        example_val = f"'{val_str.strip()}'"
 
             # Add Incomplete Records discrepancy if found
             if incomplete_indices:
@@ -88,8 +65,8 @@ class MissingValueAgent(BaseAgent):
                 inc_pct = (len(incomplete_indices) / total_rows) * 100
                 criticality = "High" if inc_pct > 30.0 else "Medium" if inc_pct > 5.0 else "Low"
                 interpretation = (
-                    f"Column '{col}' has {len(incomplete_indices)} incomplete record placeholder(s) ({inc_pct:.2f}% of rows like space, ?, -). "
-                    f"Suggested action: Correct placeholder entries or verify data collection methods."
+                    f"Column '{col}' has {len(incomplete_indices)} incomplete or null record(s) ({inc_pct:.2f}% of rows). "
+                    f"Suggested action: Impute missing values, correct placeholder entries, or verify data collection methods."
                 )
                 discrepancies.append(
                     Discrepancy(
@@ -97,7 +74,7 @@ class MissingValueAgent(BaseAgent):
                         row_indices=incomplete_indices,
                         issue_type="Incomplete Records",
                         criticality=criticality,
-                        example_value=incomplete_example,
+                        example_value=example_val,
                         interpretation=interpretation,
                         review_needed=False
                     )

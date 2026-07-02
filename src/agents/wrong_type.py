@@ -158,9 +158,9 @@ class WrongDataTypeAgent(BaseAgent):
                     inferred_type = "float"
                 max_count = num_numeric
 
-            # If the majority type represents >= 50% of the non-null data and it's not a general string type,
+            # If the majority type represents >= 70% of the non-null data and it's not a general string type,
             # we flag the remaining minority that cannot be cast.
-            if inferred_type != "str" and (max_count / total_non_null) >= 0.50:
+            if inferred_type != "str" and (max_count / total_non_null) >= 0.70:
                 wrong_indices = []
                 example_val = None
 

@@ -98,7 +98,13 @@ The system presents the results in **6 clean interactive tabs**:
   * **Toggle Switch**: Switch between inspecting **Exact Duplicates** or **Near-Duplicate Record Candidates**.
   * Shows matching duplicate rows grouped together in unified tables for side-by-side comparison.
 
-### 6. ➕ More ▾ (Drop-Down Selection Menu)
+### 6. ✍️ Data Entry Error Inspector
+* **Purpose**: Targeted deep drilling tool for wrong data types, format inconsistencies, and numeric out-of-range deviations.
+* **What it displays**:
+  * **Column Selector**: Dropdown to select columns with data entry errors.
+  * Displays findings grouped by issue type (e.g. Wrong Type, Format, Out of Range) with detailed descriptions, interpretations, and highlighted data tables.
+
+### 7. ➕ More ▾ (Drop-Down Selection Menu)
 * **Purpose**: Dynamic access to findings, visualizations, and documentation.
 * **What it displays**:
   * **Quality Audit Findings**: Expansions grouped by column or issue type, showing discrepant tables with inline mini donut charts.

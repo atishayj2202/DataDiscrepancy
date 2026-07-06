@@ -31,9 +31,10 @@ We created a fully modular, rule-based data inspection application structured as
   - **[kpi.py](src/streamlit/kpi.py)**: Shared KPI card layout and mini/audit donut charts helpers.
   - **[tab_profiler.py](src/streamlit/tab_profiler.py)**: Renders the Dataset Profiler statistics and column details expansions.
   - **[tab_summary.py](src/streamlit/tab_summary.py)**: Renders the Summary Dashboard containing quality overview metrics, error breakdown tables, and column drill downs.
-  - **[tab_row_inspector.py](src/streamlit/tab_row_inspector.py)**: Renders the Row Inspector debug tab with regex search, pagination, and download button.
+  - **[tab_row_inspector.py](src/streamlit/tab_row_inspector.py)**: Renders the Row Inspector debug tab with regex search, pagination, download button, and visual highlighting (orange text, blue cell background, and warning icon header) for the target issue column.
   - **[tab_casing.py](src/streamlit/tab_casing.py)**: Renders the capitalization corrections and mappings table.
-  - **[tab_review.py](src/streamlit/tab_review.py)**: Renders the Duplicate & Near-Duplicate Records Inspector displaying matching exact and near-duplicate row groups.
+  - **[tab_review.py](src/streamlit/tab_review.py)**: Renders the Duplicate & Near-Duplicate Records Inspector displaying matching exact and near-duplicate row groups, with visual cell and header highlighting on columns with differing values in near-duplicate clusters.
+  - **[tab_data_entry.py](src/streamlit/tab_data_entry.py)**: Renders the Data Entry Error Inspector showing wrong data types, format inconsistencies, and out-of-range value deviations grouped by column, with visual column highlights.
   - **[tab_more.py](src/streamlit/tab_more.py)**: Renders the selectable drop-down menu containing Quality Audit Findings, Visualization charts, and System Documentation.
 
 ---

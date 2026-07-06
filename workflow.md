@@ -54,9 +54,10 @@ graph TD
         M --> R["🔍 Row Inspector Tab"]
         M --> S["🔤 Inconsistent Casing Inspector Tab"]
         M --> T["👯 Duplicate Inspector Tab"]
+        M --> V["✍️ Data Entry Error Inspector Tab"]
         M --> U["➕ More dropdown Tab"]
     end
-    class P,Q,R,S,T,U level5;
+    class P,Q,R,S,T,V,U level5;
 ```
 
 ---
@@ -87,6 +88,7 @@ graph TD
      - Standard summaries and drill downs.
      - Casing group update tables.
      - Toggle-driven Exact vs Near-Duplicate comparison grids.
+     - In-depth wrong data types, format inconsistencies, and out-of-range value drill down.
      - Drop-down menu options (Findings details, Altair visualization charts, Documentation).
 
 ---
@@ -103,7 +105,7 @@ There must be 5 levels of subgraphs:
 2. "Level 2: Dataset Profiling" (Single Node: Profile Dataset Schema & Statistics). Use light red (#FCE8E6) fill with red stroke.
 3. "Level 3: Parallel Quality Agents" (7 Nodes: Incomplete, Wrong Type, Duplicates, Format Inconsistency, Out of Range, Whitespace, Casing). Use light green (#E6F4EA) fill with green stroke.
 4. "Level 4: Scoring & Penalty Compile" (Single Node: Compute Penalty Deductions & Quality Score). Use light yellow (#FEF7E0) fill with orange/yellow stroke.
-5. "Level 5: UI Dashboard Inspector" (6 Nodes representing dashboard tabs: Profiler, Summary, Row Inspector, Casing Inspector, Duplicate Inspector, More options dropdown). Use light purple (#F3E8FD) fill with purple stroke.
+5. "Level 5: UI Dashboard Inspector" (7 Nodes representing dashboard tabs: Profiler, Summary, Row Inspector, Casing Inspector, Duplicate Inspector, Data Entry Inspector, More options dropdown). Use light purple (#F3E8FD) fill with purple stroke.
 
 Ensure each node on the same level is styled with the same class Def for visual consistency.
 ```

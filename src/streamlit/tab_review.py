@@ -42,5 +42,27 @@ def render_duplicates_inspector():
                     for idx, finding in enumerate(near_dupe_findings):
                         indices = finding.row_indices
                         st.markdown(f"**Near-Duplicate Group #{idx+1} (Similarity Match):**")
-                        st.dataframe(st.session_state.df.loc[indices].astype(str), width="stretch")
+                        
+                        group_df = st.session_state.df.loc[indices].astype(str)
+                        
+                        # Find columns containing differing values within this group
+                        differing_cols = []
+                        for col in group_df.columns:
+                            if group_df[col].nunique() > 1:
+                                differing_cols.append(col)
+                                
+                        # Rename headers to include warning icon for differing fields
+                        rename_map = {col: f"⚠️ {col}" for col in differing_cols}
+                        display_df = group_df.rename(columns=rename_map)
+                        
+                        highlighted_headers = [f"⚠️ {col}" for col in differing_cols]
+                        
+                        def highlight_differing_columns(x):
+                            style_df = pd.DataFrame('', index=x.index, columns=x.columns)
+                            for col in highlighted_headers:
+                                if col in x.columns:
+                                    style_df[col] = 'background-color: rgba(41, 181, 232, 0.15); font-weight: bold; color: #ffaa00;'
+                            return style_df
+                            
+                        st.dataframe(display_df.style.apply(highlight_differing_columns, axis=None), width="stretch")
                         st.markdown("---")

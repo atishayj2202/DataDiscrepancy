@@ -23,6 +23,7 @@ from src.streamlit import (
     render_row_inspector,
     render_casing_inspector,
     render_duplicates_inspector,
+    render_data_entry_inspector,
     render_more_tab
 )
 
@@ -320,12 +321,13 @@ if st.session_state.df is None:
     """, unsafe_allow_html=True)
 else:
     # Define stable tabs visible at all times in the requested order
-    tab_profile, tab_summary, tab_row_inspector, tab_casing, tab_review, tab_more = st.tabs([
+    tab_profile, tab_summary, tab_row_inspector, tab_casing, tab_review, tab_data_entry, tab_more = st.tabs([
         "📊 Dataset Profiler",
         "📊 Summary",
         "🔍 Row Inspector",
         "🔤 Inconsistent Casing Inspector",
         "👯 Duplicate & Near-Duplicate Records Inspector",
+        "✍️ Data Entry Error Inspector",
         "➕ More ▾"
     ])
 
@@ -348,6 +350,10 @@ else:
     # --- Tab: Duplicate & Near-Duplicate Records Inspector ---
     with tab_review:
         render_duplicates_inspector()
+
+    # --- Tab: Data Entry Error Inspector ---
+    with tab_data_entry:
+        render_data_entry_inspector()
 
     # --- Tab: More ▾ ---
     with tab_more:

@@ -127,4 +127,17 @@ def render_row_inspector():
                 start_idx = (page_num - 1) * page_size
                 end_idx = start_idx + page_size
                 
-                st.dataframe(affected_df.iloc[start_idx:end_idx].astype(str), width="stretch")
+                # Format header and apply highlights to the target column
+                target_col = selected_issue.column
+                display_df = affected_df.iloc[start_idx:end_idx].astype(str)
+                
+                highlighted_header = f"⚠️ {target_col}"
+                display_df = display_df.rename(columns={target_col: highlighted_header})
+                
+                def highlight_target_column(x):
+                    style_df = pd.DataFrame('', index=x.index, columns=x.columns)
+                    if highlighted_header in x.columns:
+                        style_df[highlighted_header] = 'background-color: rgba(41, 181, 232, 0.15); font-weight: bold; color: #ffaa00;'
+                    return style_df
+                
+                st.dataframe(display_df.style.apply(highlight_target_column, axis=None), width="stretch")

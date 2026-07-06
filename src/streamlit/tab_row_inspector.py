@@ -69,31 +69,46 @@ def render_row_inspector():
                 
                 cat_findings = active_categories[selected_cat]
                 
-                # 2. Select Column & Issue Type to inspect
+                # 2. Select Column & Issue Type to inspect (with "All" option)
                 options_map = {
                     f"{f.column} — {f.issue_type} ({len(f.row_indices)} rows)": f 
                     for f in cat_findings
                 }
                 sorted_options = sorted(list(options_map.keys()))
+                options_list = ["All Columns & Issues"] + sorted_options
                 
                 selected_option = st.selectbox(
                     "Select Column & Issue Type to inspect:",
-                    sorted_options,
+                    options_list,
                     key="row_inspector_col_select"
                 )
                 
-                # Find the finding matching this selection
-                selected_issue = options_map[selected_option]
-                
-                # Minimal format description (without description details card)
-                st.markdown(f"**Selected Issue:** {selected_issue.issue_type} | **Column:** `{selected_issue.column}` | **Criticality:** {selected_issue.criticality} | **Rows Affected:** `{len(selected_issue.row_indices)}`")
-                st.markdown("---")
+                if selected_option == "All Columns & Issues":
+                    active_findings = cat_findings
+                    combined_row_indices = []
+                    for f in cat_findings:
+                        combined_row_indices.extend(f.row_indices)
+                    combined_row_indices = sorted(list(set(combined_row_indices)))
+                    
+                    st.markdown(f"**Selected Category:** `{selected_cat}` | **Rows Affected:** `{len(combined_row_indices)}`")
+                    st.markdown("---")
+                    
+                    affected_df = st.session_state.df.loc[combined_row_indices]
+                    total_affected = len(combined_row_indices)
+                    csv_file_name = f"{selected_cat}_all_affected_rows.csv"
+                else:
+                    selected_issue = options_map[selected_option]
+                    active_findings = [selected_issue]
+                    
+                    st.markdown(f"**Selected Issue:** {selected_issue.issue_type} | **Column:** `{selected_issue.column}` | **Criticality:** {selected_issue.criticality} | **Rows Affected:** `{len(selected_issue.row_indices)}`")
+                    st.markdown("---")
+                    
+                    affected_df = st.session_state.df.loc[selected_issue.row_indices]
+                    total_affected = len(selected_issue.row_indices)
+                    csv_file_name = f"{selected_issue.column}_{selected_issue.issue_type}_affected_rows.csv"
             
                 # Search within rows
                 search_query = st.text_input("🔍 Search within affected rows (regex supported):", "", key="row_inspector_search")
-                
-                # Get the slice of affected rows
-                affected_df = st.session_state.df.loc[selected_issue.row_indices]
                 
                 # Filter by search query
                 if search_query:
@@ -104,7 +119,7 @@ def render_row_inspector():
                     affected_df = affected_df[mask]
                 
                 total_matching = len(affected_df)
-                st.markdown(f"📊 **Rows matching search:** `{total_matching}` / `{len(selected_issue.row_indices)}` total affected rows")
+                st.markdown(f"📊 **Rows matching search:** `{total_matching}` / `{total_affected}` total affected rows")
                 
                 # Pagination
                 page_size = 15
@@ -119,7 +134,7 @@ def render_row_inspector():
                     st.download_button(
                         label="📥 Download Affected Rows as CSV",
                         data=csv_data,
-                        file_name=f"{selected_issue.column}_{selected_issue.issue_type}_affected_rows.csv",
+                        file_name=csv_file_name,
                         mime="text/csv",
                         key="download_affected_rows"
                     )
@@ -127,17 +142,31 @@ def render_row_inspector():
                 start_idx = (page_num - 1) * page_size
                 end_idx = start_idx + page_size
                 
-                # Format header and apply highlights to the target column
-                target_col = selected_issue.column
+                # Format headers and apply cell-level highlights to active columns
                 display_df = affected_df.iloc[start_idx:end_idx].astype(str)
                 
-                highlighted_header = f"⚠️ {target_col}"
-                display_df = display_df.rename(columns={target_col: highlighted_header})
+                columns_with_issues = set(f.column for f in active_findings)
+                rename_map = {col: f"⚠️ {col}" for col in columns_with_issues if col in display_df.columns}
+                display_df = display_df.rename(columns=rename_map)
                 
-                def highlight_target_column(x):
+                def highlight_particular_cells(x):
                     style_df = pd.DataFrame('', index=x.index, columns=x.columns)
-                    if highlighted_header in x.columns:
-                        style_df[highlighted_header] = 'background-color: rgba(41, 181, 232, 0.15); font-weight: bold; color: #ffaa00;'
+                    for f in active_findings:
+                        col_in_display = rename_map.get(f.column, f.column)
+                        if col_in_display in x.columns:
+                            # Highlight only the specific rows that have this specific issue
+                            for idx in f.row_indices:
+                                if idx in x.index:
+                                    if f.issue_type == "Clear Out-of-Range":
+                                        bg = "rgba(255, 75, 75, 0.15)"
+                                        fg = "#ff4b4b"
+                                    elif f.issue_type == "Borderline Out-of-Range (Requires Review)":
+                                        bg = "rgba(255, 170, 0, 0.15)"
+                                        fg = "#ffaa00"
+                                    else:
+                                        bg = "rgba(41, 181, 232, 0.15)"
+                                        fg = "#ffaa00"
+                                    style_df.loc[idx, col_in_display] = f"background-color: {bg}; font-weight: bold; color: {fg};"
                     return style_df
                 
-                st.dataframe(display_df.style.apply(highlight_target_column, axis=None), width="stretch")
+                st.dataframe(display_df.style.apply(highlight_particular_cells, axis=None), width="stretch")

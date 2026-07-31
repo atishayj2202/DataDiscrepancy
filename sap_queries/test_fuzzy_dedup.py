@@ -26,11 +26,11 @@ class TestFuzzyDeduplication(unittest.TestCase):
         self.assertEqual(clusters['2'], '1')
         self.assertEqual(clusters['3'], '1')
         
-        # Test Diff Extraction
+        # Test Diff Extraction with simple thread-safe algorithm
         node_2 = next(r for r in results if r['KUNNR'] == '2')
-        # Master record is "APPLE INC 123 MAIN ST"
-        # Duplicate record is "APPLE INC. 123 MAIN ST"
-        # The uncommon part for the duplicate should mathematically just be "."
+        # Master is "APPLE INC 123 MAIN ST"
+        # Node 2 is "APPLE INC. 123 MAIN ST"
+        # The uncommon part is "."
         self.assertEqual(node_2['UncommonPart'], ".")
         self.assertIn("APPLE INC", node_2['CommonPart'])
 
@@ -48,10 +48,9 @@ class TestFuzzyDeduplication(unittest.TestCase):
     def test_extract_diff_parts(self):
         """Direct unit test of the internal diff logic algorithm."""
         c, u = extract_diff_parts("APPLE INC", "APPEL INC")
-        # difflib mathematically aligns the strings character-by-character.
-        # It finds that 'E' is the uncommon insertion/replacement.
-        self.assertTrue(len(u) > 0) 
-        self.assertTrue(len(c) > 0)
+        # Simple Thread-Safe Algorithm exactly bounds the typo in the middle!
+        self.assertEqual(u, "EL") 
+        self.assertEqual(c, "APP ...  INC")
 
     def test_completely_different_records(self):
         data = [

@@ -41,11 +41,9 @@ class TestFuzzyDeduplication(unittest.TestCase):
             {'KUNNR': 2, 'LAND1': 'CA', 'NAME1': 'Walmart Corp'}, 
         ]
         results = self.run_transform(data)
-        clusters = {r['KUNNR']: r['Cluster_ID'] for r in results}
         
-        # Even though they are exact text matches, different LAND1 blocks them from comparing
-        self.assertEqual(clusters['1'], '1')
-        self.assertEqual(clusters['2'], '2')
+        # They should be dropped entirely because there are no duplicate pairs!
+        self.assertEqual(len(results), 0)
 
     def test_extract_diff_parts(self):
         """Direct unit test of the internal diff logic algorithm."""
@@ -62,10 +60,9 @@ class TestFuzzyDeduplication(unittest.TestCase):
             {'KUNNR': 3, 'LAND1': 'US', 'NAME1': 'Orange LLC'},
         ]
         results = self.run_transform(data)
-        clusters = {r['KUNNR']: r['Cluster_ID'] for r in results}
-        self.assertEqual(clusters['1'], '1')
-        self.assertEqual(clusters['2'], '2')
-        self.assertEqual(clusters['3'], '3')
+        
+        # They are all unique, so the script should drop all of them!
+        self.assertEqual(len(results), 0)
 
     def test_transitive_chaining(self):
         data = [

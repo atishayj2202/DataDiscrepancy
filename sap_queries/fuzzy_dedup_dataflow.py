@@ -160,5 +160,9 @@ def transform(df: pd.DataFrame) -> pd.DataFrame:
     df['CommonPart'] = df['CommonPart'].astype(str).str.slice(0, 64)
     df['UncommonPart'] = df['UncommonPart'].astype(str).str.slice(0, 64)
     
+    # 8. Final Filtering
+    # Only return rows that are part of a cluster with > 1 record (i.e., drop all unique records)
+    df = df[df.groupby('Cluster_ID')['Cluster_ID'].transform('count') > 1]
+    
     final_cols = ['KUNNR', 'Cluster_ID', 'CommonPart', 'UncommonPart']
     return df[final_cols].sort_values(['Cluster_ID', 'KUNNR']).reset_index(drop=True)

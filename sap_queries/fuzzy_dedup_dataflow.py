@@ -1,10 +1,8 @@
 import json
+import re
 from collections import defaultdict
 
 def levenshtein_distance(s1, s2):
-    """
-    Calculates the Edit Distance between two strings using only standard Python.
-    """
     if len(s1) < len(s2):
         return levenshtein_distance(s2, s1)
     if len(s2) == 0:
@@ -20,44 +18,76 @@ def levenshtein_distance(s1, s2):
         previous_row = current_row
     return previous_row[-1]
 
-def fuzzy_deduplicate(records, threshold_pct=0.10):
+def get_blocking_keys(text):
     """
-    Main Dataflow Function.
-    Takes a list of record dictionaries and assigns a 'Cluster_ID' to group near-duplicates.
+    Generates multiple blocking keys to ensure high recall.
+    If a typo occurs at the start of a word, the suffix or consonant key will catch it.
+    """
+    keys = []
+    clean_text = re.sub(r'[^A-Z0-9]', '', text)
+    
+    if len(clean_text) >= 3:
+        keys.append(f"PRE_{clean_text[:3]}")  # Prefix block
+        keys.append(f"SUF_{clean_text[-3:]}") # Suffix block
+        
+    # Consonant Skeleton (Strip vowels)
+    consonants = re.sub(r'[AEIOU]', '', clean_text)
+    if len(consonants) >= 3:
+        keys.append(f"CON_{consonants[:4]}")  # First 4 consonants
+        
+    if not keys:
+        keys.append(f"ALL_{clean_text}")
+        
+    return keys
+
+def fuzzy_deduplicate(records, threshold_pct=0.15):
+    """
+    Most Accurate & Reliable Fuzzy Deduplication Dataflow Function.
     """
     blocks = defaultdict(list)
     edges = defaultdict(list)
     nodes = set()
     
-    # 1. Data Preparation & Blocking
+    # 1. Data Preparation & Multi-Pass Blocking
     for r in records:
-        # Concatenate columns (Modify keys based on your actual data flow schema)
-        text = f"{r.get('Col1', '')}|{r.get('Col2', '')}|{r.get('Col3', '')}".upper().strip()
-        r['__WholeText'] = text
+        # Safely handle explicit None values returned from database
+        col1 = r.get('Col1') or ""
+        col2 = r.get('Col2') or ""
+        col3 = r.get('Col3') or ""
         
-        # Blocking Key: Group by the first 2 characters to prevent O(N^2) explosion
-        # Using only 2 characters ensures we don't miss typos that happen early in the string!
-        blocking_key = text[:2]
-        blocks[blocking_key].append(r)
+        text = f"{col1}|{col2}|{col3}".upper()
+        # Remove massive spaces
+        text = re.sub(r'\s+', ' ', text).strip()
+        r['__WholeText'] = text
         nodes.add(r['ID'])
         
+        b_keys = get_blocking_keys(text)
+        for bk in b_keys:
+            blocks[bk].append(r)
+            
     # 2. Find Valid Pairs within Blocks
+    processed_pairs = set()
+    
     for block_key, block_records in blocks.items():
         n = len(block_records)
         for i in range(n):
             for j in range(i + 1, n):
                 r1 = block_records[i]
                 r2 = block_records[j]
+                
+                # Ensure we don't process the same pair multiple times if they share multiple blocks
+                pair_id = tuple(sorted([r1['ID'], r2['ID']]))
+                if pair_id in processed_pairs:
+                    continue
+                processed_pairs.add(pair_id)
+                
                 t1, t2 = r1['__WholeText'], r2['__WholeText']
                 
-                # Fast Length Filter before running heavy Levenshtein math
                 if abs(len(t1) - len(t2)) > 5:
                     continue
                     
-                # Proportional Edit Distance Check
                 dist = levenshtein_distance(t1, t2)
                 if dist <= threshold_pct * max(len(t1), len(t2)):
-                    # Valid match found! Create a bidirectional edge for the graph
                     edges[r1['ID']].append(r2['ID'])
                     edges[r2['ID']].append(r1['ID'])
                     
@@ -67,7 +97,6 @@ def fuzzy_deduplicate(records, threshold_pct=0.10):
     
     for node in nodes:
         if node not in visited:
-            # Start a new cluster group
             component = []
             stack = [node]
             while stack:
@@ -77,7 +106,6 @@ def fuzzy_deduplicate(records, threshold_pct=0.10):
                     component.append(curr)
                     stack.extend(edges.get(curr, []))
             
-            # The lowest ID in the connected component becomes the official Cluster ID
             cluster_id = min(component)
             for member in component:
                 clusters[member] = cluster_id
@@ -85,34 +113,10 @@ def fuzzy_deduplicate(records, threshold_pct=0.10):
     # 4. Final Output Formatting
     output = []
     for r in records:
-        # Clean up temporary fields and attach the final Cluster_ID
         text = r.pop('__WholeText')
         r['Cluster_ID'] = clusters[r['ID']]
         r['WholeRecordText'] = text
         output.append(r)
         
-    # Sort output for readability (optional)
     output.sort(key=lambda x: (x['Cluster_ID'], x['ID']))
     return output
-
-# ==========================================
-# LOCAL TESTING
-# ==========================================
-if __name__ == "__main__":
-    sample_data = [
-        {'ID': 1, 'Col1': 'Apple', 'Col2': 'Inc', 'Col3': '123 Main St'},
-        {'ID': 2, 'Col1': 'Apple', 'Col2': 'Inc.', 'Col3': '123 Main St'},
-        {'ID': 3, 'Col1': 'Appel', 'Col2': 'Inc', 'Col3': '123 Main St'}, # Typo
-        {'ID': 4, 'Col1': 'Banana', 'Col2': 'Corp', 'Col3': '456 West Dr'},
-        {'ID': 5, 'Col1': 'Bannana', 'Col2': 'Corp', 'Col3': '456 West Dr'}, # Typo
-        {'ID': 6, 'Col1': 'Orange', 'Col2': 'LLC', 'Col3': '789 East Blvd'},
-    ]
-    
-    print("Running Pure Python Fuzzy Deduplication...")
-    results = fuzzy_deduplicate(sample_data)
-    
-    print("\nResults:")
-    print(f"{'Cluster_ID':<12} | {'ID':<5} | {'WholeRecordText'}")
-    print("-" * 50)
-    for row in results:
-        print(f"{row['Cluster_ID']:<12} | {row['ID']:<5} | {row['WholeRecordText']}")

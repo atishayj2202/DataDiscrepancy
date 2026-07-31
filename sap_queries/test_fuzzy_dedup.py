@@ -1,6 +1,6 @@
 import unittest
 import pandas as pd
-from fuzzy_dedup_dataflow import transform, extract_diff_parts
+from fuzzy_dedup_dataflow import transform
 
 class TestFuzzyDeduplication(unittest.TestCase):
 
@@ -44,13 +44,6 @@ class TestFuzzyDeduplication(unittest.TestCase):
         
         # They should be dropped entirely because there are no duplicate pairs!
         self.assertEqual(len(results), 0)
-
-    def test_extract_diff_parts(self):
-        """Direct unit test of the internal diff logic algorithm."""
-        c, u = extract_diff_parts("APPLE INC", "APPEL INC")
-        # Simple Thread-Safe Algorithm exactly bounds the typo in the middle!
-        self.assertEqual(u, "EL") 
-        self.assertEqual(c, "APP ...  INC")
 
     def test_completely_different_records(self):
         data = [

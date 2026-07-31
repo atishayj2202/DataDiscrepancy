@@ -140,55 +140,62 @@ ORDER BY Cluster_Size DESC, Cluster_ID, RecordID;
 
 ---
 
-## OPTION 3: Flattened Non-Recursive Mode (Maximum Compatibility)
-**Best for**: Strict legacy parsers that aggressively ban `WITH RECURSIVE` or deeply nested CTE blocks.
-**How to use**: This version removes the recursive graph network algorithm entirely. Instead of chaining (A=B and B=C), it just maps every matching pair to the lowest RecordID in that pair (`LEAST(ID1, ID2)`). It is extremely safe and will compile in almost any rigid SQL parser, but it may split massive interconnected clusters into smaller pairs.
+## OPTION 3: Zero-WITH-Clause Mode (Nuclear Compatibility)
+**Best for**: Strict legacy parsers that aggressively ban the `WITH` keyword entirely.
+**How to use**: This version removes the CTEs entirely and rewrites the logic using nested subqueries (derived tables). Because CTEs cannot be used, the base `SourceData` query has to be repeated a few times, but it completely avoids the `WITH` keyword while achieving the same flattened deduplication grouping logic.
 
 ```sql
-SELECT * FROM (
-
-    WITH 
-    SourceData AS (
-        SELECT 
-            RecordID AS ID, 
-            UPPER(TRIM(COALESCE(Col1, '') || '|' || COALESCE(Col2, '') || '|' || COALESCE(Col3, ''))) AS WholeRecordText,
-            SUBSTRING(UPPER(TRIM(COALESCE(Col1, ''))), 1, 4) AS BlockingKey
-        FROM YourSchema.YourTableName
-    ),
-    CandidatePairs AS (
-        SELECT 
-            a.ID AS ID1, 
-            b.ID AS ID2, 
-            LEVENSHTEIN_DIST(a.WholeRecordText, b.WholeRecordText) AS EditDistance
-        FROM SourceData a
-        JOIN SourceData b 
-          ON a.BlockingKey = b.BlockingKey 
-          AND a.ID < b.ID
-          AND ABS(LENGTH(a.WholeRecordText) - LENGTH(b.WholeRecordText)) <= 5 
-    ),
-    ValidPairs AS (
-        SELECT ID1, ID2
-        FROM CandidatePairs
-        WHERE EditDistance <= 0.10 * GREATEST(LENGTH(Text1), LENGTH(Text2))
-    ),
-    -- Simplified Grouping: Take the smallest ID from the pair as the Cluster ID
-    SimplifiedClusters AS (
-        SELECT 
-            ID2 AS Original_ID, 
-            MIN(ID1) AS Cluster_ID
-        FROM ValidPairs
-        GROUP BY ID2
-    )
-    
+SELECT 
+    COALESCE(c.Cluster_ID, s.ID) AS Cluster_ID,
+    s.ID AS RecordID,
+    s.WholeRecordText,
+    COUNT(*) OVER (PARTITION BY COALESCE(c.Cluster_ID, s.ID)) AS Cluster_Size,
+    CASE WHEN COUNT(*) OVER (PARTITION BY COALESCE(c.Cluster_ID, s.ID)) > 1 THEN 'Near Duplicate' ELSE 'Unique' END AS Record_Status
+FROM (
+    -- 1. Source Data (s)
     SELECT 
-        COALESCE(c.Cluster_ID, s.ID) AS Cluster_ID,
-        s.ID AS RecordID,
-        s.WholeRecordText,
-        COUNT(*) OVER (PARTITION BY COALESCE(c.Cluster_ID, s.ID)) AS Cluster_Size,
-        CASE WHEN COUNT(*) OVER (PARTITION BY COALESCE(c.Cluster_ID, s.ID)) > 1 THEN 'Near Duplicate' ELSE 'Unique' END AS Record_Status
-    FROM SourceData s
-    LEFT JOIN SimplifiedClusters c ON s.ID = c.Original_ID
-
-) AS FlattenedFuzzyClusters
+        RecordID AS ID, 
+        UPPER(TRIM(COALESCE(Col1, '') || '|' || COALESCE(Col2, '') || '|' || COALESCE(Col3, ''))) AS WholeRecordText,
+        SUBSTRING(UPPER(TRIM(COALESCE(Col1, ''))), 1, 4) AS BlockingKey
+    FROM YourSchema.YourTableName
+) s
+LEFT JOIN (
+    -- 4. Simplified Clusters (Grouping Valid Pairs)
+    SELECT 
+        ID2 AS Original_ID, 
+        MIN(ID1) AS Cluster_ID
+    FROM (
+        -- 3. Valid Pairs (Applying Levenshtein Threshold)
+        SELECT ID1, ID2
+        FROM (
+            -- 2. Candidate Pairs (Applying Blocking Key and Levenshtein)
+            SELECT 
+                a.ID AS ID1, 
+                b.ID AS ID2,
+                a.WholeRecordText AS Text1,
+                b.WholeRecordText AS Text2,
+                LEVENSHTEIN_DIST(a.WholeRecordText, b.WholeRecordText) AS EditDistance
+            FROM (
+                SELECT 
+                    RecordID AS ID, 
+                    UPPER(TRIM(COALESCE(Col1, '') || '|' || COALESCE(Col2, '') || '|' || COALESCE(Col3, ''))) AS WholeRecordText,
+                    SUBSTRING(UPPER(TRIM(COALESCE(Col1, ''))), 1, 4) AS BlockingKey
+                FROM YourSchema.YourTableName
+            ) a
+            JOIN (
+                SELECT 
+                    RecordID AS ID, 
+                    UPPER(TRIM(COALESCE(Col1, '') || '|' || COALESCE(Col2, '') || '|' || COALESCE(Col3, ''))) AS WholeRecordText,
+                    SUBSTRING(UPPER(TRIM(COALESCE(Col1, ''))), 1, 4) AS BlockingKey
+                FROM YourSchema.YourTableName
+            ) b 
+            ON a.BlockingKey = b.BlockingKey 
+            AND a.ID < b.ID
+            AND ABS(LENGTH(a.WholeRecordText) - LENGTH(b.WholeRecordText)) <= 5 
+        ) CandidatePairs
+        WHERE EditDistance <= 0.10 * GREATEST(LENGTH(Text1), LENGTH(Text2))
+    ) ValidPairs
+    GROUP BY ID2
+) c ON s.ID = c.Original_ID
 ORDER BY Cluster_Size DESC, Cluster_ID, RecordID;
 ```

@@ -22,12 +22,12 @@ class TestFuzzyDeduplication(unittest.TestCase):
         clusters = {r['KUNNR']: r['Cluster_ID'] for r in results}
         
         # Test Clustering
-        self.assertEqual(clusters[1], 1)
-        self.assertEqual(clusters[2], 1)
-        self.assertEqual(clusters[3], 1)
+        self.assertEqual(clusters['1'], '1')
+        self.assertEqual(clusters['2'], '1')
+        self.assertEqual(clusters['3'], '1')
         
         # Test Diff Extraction
-        node_2 = next(r for r in results if r['KUNNR'] == 2)
+        node_2 = next(r for r in results if r['KUNNR'] == '2')
         # Master record is "APPLE INC 123 MAIN ST"
         # Duplicate record is "APPLE INC. 123 MAIN ST"
         # The uncommon part for the duplicate should mathematically just be "."
@@ -44,8 +44,8 @@ class TestFuzzyDeduplication(unittest.TestCase):
         clusters = {r['KUNNR']: r['Cluster_ID'] for r in results}
         
         # Even though they are exact text matches, different LAND1 blocks them from comparing
-        self.assertEqual(clusters[1], 1)
-        self.assertEqual(clusters[2], 2)
+        self.assertEqual(clusters['1'], '1')
+        self.assertEqual(clusters['2'], '2')
 
     def test_extract_diff_parts(self):
         """Direct unit test of the internal diff logic algorithm."""
@@ -63,9 +63,9 @@ class TestFuzzyDeduplication(unittest.TestCase):
         ]
         results = self.run_transform(data)
         clusters = {r['KUNNR']: r['Cluster_ID'] for r in results}
-        self.assertEqual(clusters[1], 1)
-        self.assertEqual(clusters[2], 2)
-        self.assertEqual(clusters[3], 3)
+        self.assertEqual(clusters['1'], '1')
+        self.assertEqual(clusters['2'], '2')
+        self.assertEqual(clusters['3'], '3')
 
     def test_transitive_chaining(self):
         data = [
@@ -77,9 +77,9 @@ class TestFuzzyDeduplication(unittest.TestCase):
         clusters = {r['KUNNR']: r['Cluster_ID'] for r in results}
         
         # A matches B. B matches C. Therefore A, B, C are in Cluster 1.
-        self.assertEqual(clusters[1], 1)
-        self.assertEqual(clusters[2], 1)
-        self.assertEqual(clusters[3], 1)
+        self.assertEqual(clusters['1'], '1')
+        self.assertEqual(clusters['2'], '1')
+        self.assertEqual(clusters['3'], '1')
 
 if __name__ == '__main__':
     unittest.main()

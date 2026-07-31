@@ -151,6 +151,14 @@ def transform(df: pd.DataFrame) -> pd.DataFrame:
         lambda row: pd.Series(get_diffs(row)), axis=1
     )
     
-    # 7. Final Formatting (Return only requested columns)
+    # 7. Final Formatting & Datatype Enforcement
+    # Ensure KUNNR and Cluster_ID are standard strings to match SAP schema
+    df['KUNNR'] = df['KUNNR'].astype(str)
+    df['Cluster_ID'] = df['Cluster_ID'].astype(str)
+    
+    # Enforce strict 64-character limit for the preview strings
+    df['CommonPart'] = df['CommonPart'].astype(str).str.slice(0, 64)
+    df['UncommonPart'] = df['UncommonPart'].astype(str).str.slice(0, 64)
+    
     final_cols = ['KUNNR', 'Cluster_ID', 'CommonPart', 'UncommonPart']
     return df[final_cols].sort_values(['Cluster_ID', 'KUNNR']).reset_index(drop=True)

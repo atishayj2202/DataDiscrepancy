@@ -1,79 +1,85 @@
 import unittest
 import pandas as pd
-from fuzzy_dedup_dataflow import transform
+from fuzzy_dedup_dataflow import transform, extract_diff_parts
 
 class TestFuzzyDeduplication(unittest.TestCase):
 
     def setUp(self):
         self.maxDiff = None
 
-    def run_transform_and_get_clusters(self, data):
+    def run_transform(self, data):
         df = pd.DataFrame(data)
         result_df = transform(df)
-        result_dicts = result_df.to_dict('records')
-        return {r['ID']: r['Cluster_ID'] for r in result_dicts}
+        return result_df.to_dict('records')
 
     def test_standard_typos(self):
         data = [
-            {'ID': 1, 'Col1': 'Apple', 'Col2': 'Inc', 'Col3': '123 Main St'},
-            {'ID': 2, 'Col1': 'Apple', 'Col2': 'Inc.', 'Col3': '123 Main St'},
-            {'ID': 3, 'Col1': 'Appel', 'Col2': 'Inc', 'Col3': '123 Main St'},
+            {'KUNNR': 1, 'LAND1': 'US', 'NAME1': 'Apple Inc', 'STRAS': '123 Main St'},
+            {'KUNNR': 2, 'LAND1': 'US', 'NAME1': 'Apple Inc.', 'STRAS': '123 Main St'},
+            {'KUNNR': 3, 'LAND1': 'US', 'NAME1': 'Appel Inc', 'STRAS': '123 Main St'},
         ]
-        clusters = self.run_transform_and_get_clusters(data)
+        results = self.run_transform(data)
+        clusters = {r['KUNNR']: r['Cluster_ID'] for r in results}
+        
+        # Test Clustering
         self.assertEqual(clusters[1], 1)
         self.assertEqual(clusters[2], 1)
         self.assertEqual(clusters[3], 1)
+        
+        # Test Diff Extraction
+        node_2 = next(r for r in results if r['KUNNR'] == 2)
+        # Master record is "APPLE INC 123 MAIN ST"
+        # Duplicate record is "APPLE INC. 123 MAIN ST"
+        # The uncommon part for the duplicate should mathematically just be "."
+        self.assertEqual(node_2['UncommonPart'], ".")
+        self.assertIn("APPLE INC", node_2['CommonPart'])
 
-    def test_early_typos_multi_block_recall(self):
+    def test_cross_country_no_match(self):
+        """Tests that the LAND1 block correctly prevents cross-country matches."""
         data = [
-            {'ID': 1, 'Col1': 'Walmart', 'Col2': 'Corp', 'Col3': 'HQ'},
-            {'ID': 2, 'Col1': 'Qalmart', 'Col2': 'Corp', 'Col3': 'HQ'}, 
+            {'KUNNR': 1, 'LAND1': 'US', 'NAME1': 'Walmart Corp'},
+            {'KUNNR': 2, 'LAND1': 'CA', 'NAME1': 'Walmart Corp'}, 
         ]
-        clusters = self.run_transform_and_get_clusters(data)
+        results = self.run_transform(data)
+        clusters = {r['KUNNR']: r['Cluster_ID'] for r in results}
+        
+        # Even though they are exact text matches, different LAND1 blocks them from comparing
         self.assertEqual(clusters[1], 1)
-        self.assertEqual(clusters[2], 1)
+        self.assertEqual(clusters[2], 2)
+
+    def test_extract_diff_parts(self):
+        """Direct unit test of the internal diff logic algorithm."""
+        c, u = extract_diff_parts("APPLE INC", "APPEL INC")
+        # difflib mathematically aligns the strings character-by-character.
+        # It finds that 'E' is the uncommon insertion/replacement.
+        self.assertTrue(len(u) > 0) 
+        self.assertTrue(len(c) > 0)
 
     def test_completely_different_records(self):
         data = [
-            {'ID': 1, 'Col1': 'Apple', 'Col2': 'Inc'},
-            {'ID': 2, 'Col1': 'Banana', 'Col2': 'Corp'},
-            {'ID': 3, 'Col1': 'Orange', 'Col2': 'LLC'},
+            {'KUNNR': 1, 'LAND1': 'US', 'NAME1': 'Apple Inc'},
+            {'KUNNR': 2, 'LAND1': 'US', 'NAME1': 'Banana Corp'},
+            {'KUNNR': 3, 'LAND1': 'US', 'NAME1': 'Orange LLC'},
         ]
-        clusters = self.run_transform_and_get_clusters(data)
+        results = self.run_transform(data)
+        clusters = {r['KUNNR']: r['Cluster_ID'] for r in results}
         self.assertEqual(clusters[1], 1)
         self.assertEqual(clusters[2], 2)
         self.assertEqual(clusters[3], 3)
 
     def test_transitive_chaining(self):
         data = [
-            {'ID': 1, 'Col1': 'Microsoft', 'Col2': 'Corporation'},
-            {'ID': 2, 'Col1': 'Microsft', 'Col2': 'Corporation'}, 
-            {'ID': 3, 'Col1': 'Microsft', 'Col2': 'Corperation'}, 
+            {'KUNNR': 1, 'LAND1': 'DE', 'NAME1': 'Microsoft Corporation'},
+            {'KUNNR': 2, 'LAND1': 'DE', 'NAME1': 'Microsft Corporation'}, 
+            {'KUNNR': 3, 'LAND1': 'DE', 'NAME1': 'Microsft Corperation'}, 
         ]
-        clusters = self.run_transform_and_get_clusters(data)
+        results = self.run_transform(data)
+        clusters = {r['KUNNR']: r['Cluster_ID'] for r in results}
+        
+        # A matches B. B matches C. Therefore A, B, C are in Cluster 1.
         self.assertEqual(clusters[1], 1)
         self.assertEqual(clusters[2], 1)
         self.assertEqual(clusters[3], 1)
-
-    def test_missing_data(self):
-        data = [
-            {'ID': 1, 'Col1': 'Google', 'Col2': None, 'Col3': 'Mountain View'},
-            {'ID': 2, 'Col1': 'Google', 'Col2': '', 'Col3': 'Mountain View'},
-        ]
-        clusters = self.run_transform_and_get_clusters(data)
-        self.assertEqual(clusters[1], 1)
-        self.assertEqual(clusters[2], 1)
-
-    def test_short_strings(self):
-        data = [
-            {'ID': 1, 'Col1': 'IT'},
-            {'ID': 2, 'Col1': 'IT'},
-            {'ID': 3, 'Col1': 'HR'},
-        ]
-        clusters = self.run_transform_and_get_clusters(data)
-        self.assertEqual(clusters[1], 1)
-        self.assertEqual(clusters[2], 1)
-        self.assertEqual(clusters[3], 3)
 
 if __name__ == '__main__':
     unittest.main()

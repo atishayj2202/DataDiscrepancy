@@ -1,8 +1,10 @@
-import json
+import pandas as pd
+import difflib
 import re
 from collections import defaultdict
 
 def levenshtein_distance(s1, s2):
+    """Algorithm 1: Standard Edit Distance."""
     if len(s1) < len(s2):
         return levenshtein_distance(s2, s1)
     if len(s2) == 0:
@@ -18,80 +20,102 @@ def levenshtein_distance(s1, s2):
         previous_row = current_row
     return previous_row[-1]
 
-def get_blocking_keys(text):
-    """
-    Generates multiple blocking keys to ensure high recall.
-    If a typo occurs at the start of a word, the suffix or consonant key will catch it.
-    """
-    keys = []
-    clean_text = re.sub(r'[^A-Z0-9]', '', text)
-    
-    if len(clean_text) >= 3:
-        keys.append(f"PRE_{clean_text[:3]}")  # Prefix block
-        keys.append(f"SUF_{clean_text[-3:]}") # Suffix block
-        
-    # Consonant Skeleton (Strip vowels)
-    consonants = re.sub(r'[AEIOU]', '', clean_text)
-    if len(consonants) >= 3:
-        keys.append(f"CON_{consonants[:4]}")  # First 4 consonants
-        
-    if not keys:
-        keys.append(f"ALL_{clean_text}")
-        
-    return keys
+def jaccard_bigram_similarity(s1, s2):
+    """Algorithm 2: Jaccard N-Gram Similarity."""
+    if not s1 or not s2: return 0.0
+    b1 = set([s1[i:i+2] for i in range(len(s1)-1)]) if len(s1) > 1 else set([s1])
+    b2 = set([s2[i:i+2] for i in range(len(s2)-1)]) if len(s2) > 1 else set([s2])
+    intersection = b1.intersection(b2)
+    union = b1.union(b2)
+    if not union: return 0.0
+    return len(intersection) / len(union)
 
-def fuzzy_deduplicate(records, threshold_pct=0.15):
+def calculate_composite_score(t1, t2):
+    """Calculates a composite fuzzy score using 3 different algorithms."""
+    if not t1 or not t2: return 0.0
+    if abs(len(t1) - len(t2)) > 15: return 0.0 # Fast fail for wildly different strings
+    
+    # Algorithm 1: Levenshtein (Normalized)
+    max_len = max(len(t1), len(t2))
+    lev_sim = 1.0 - (levenshtein_distance(t1, t2) / max_len)
+    
+    # Algorithm 2: Jaccard Bigram
+    jac_sim = jaccard_bigram_similarity(t1, t2)
+    
+    # Algorithm 3: Ratcliff/Obershelp Pattern Matching (Built-in)
+    seq_sim = difflib.SequenceMatcher(None, t1, t2).ratio()
+    
+    # Composite Score (Equal Weights)
+    return (lev_sim + jac_sim + seq_sim) / 3.0
+
+def extract_diff_parts(centroid_text, record_text):
+    """Uses difflib to extract exactly which parts match and which parts differ."""
+    if centroid_text == record_text:
+        return centroid_text, ""
+        
+    s = difflib.SequenceMatcher(None, centroid_text, record_text)
+    common = []
+    uncommon = []
+    
+    for tag, i1, i2, j1, j2 in s.get_opcodes():
+        if tag == 'equal':
+            common.append(record_text[j1:j2])
+        else:
+            if j1 != j2:
+                uncommon.append(record_text[j1:j2])
+                
+    return " ... ".join(common).strip(), " | ".join(uncommon).strip()
+
+def transform(df: pd.DataFrame) -> pd.DataFrame:
     """
-    Most Accurate & Reliable Fuzzy Deduplication Dataflow Function.
+    SAP Datasphere Python Dataflow Entry Point.
+    Uses Pandas vectorized operations for max performance.
     """
-    blocks = defaultdict(list)
+    if df.empty:
+        return df
+        
+    # Ensure required columns exist
+    if 'KUNNR' not in df.columns or 'LAND1' not in df.columns:
+        raise ValueError("DataFrame must contain KUNNR (ID) and LAND1 (Blocking Key) columns.")
+        
+    # 1. Vectorized Data Prep
+    # Concatenate all non-key columns into a single text block for comparison
+    text_cols = [c for c in df.columns if c not in ['KUNNR', 'LAND1']]
+    df['__WholeText'] = df[text_cols].fillna('').astype(str).agg(' '.join, axis=1)
+    df['__WholeText'] = df['__WholeText'].str.upper().apply(lambda x: re.sub(r'\s+', ' ', x).strip())
+    
+    # 2. Vectorized Blocking via Pandas Self-Merge
+    # Instantly pairs all records within the same country code
+    df_pairs = pd.merge(
+        df[['KUNNR', 'LAND1', '__WholeText']], 
+        df[['KUNNR', 'LAND1', '__WholeText']], 
+        on='LAND1', 
+        suffixes=('_1', '_2')
+    )
+    
+    # 3. Filter duplicate candidate pairs and self-joins
+    df_pairs = df_pairs[df_pairs['KUNNR_1'] < df_pairs['KUNNR_2']].copy()
+    
     edges = defaultdict(list)
-    nodes = set()
+    nodes = set(df['KUNNR'])
     
-    # 1. Data Preparation & Multi-Pass Blocking
-    for r in records:
-        # Safely handle explicit None values returned from database
-        col1 = r.get('Col1') or ""
-        col2 = r.get('Col2') or ""
-        col3 = r.get('Col3') or ""
+    # 4. Multi-Algorithm Scoring
+    if not df_pairs.empty:
+        # Apply the composite scoring function across the paired dataframe
+        df_pairs['CompositeScore'] = df_pairs.apply(
+            lambda row: calculate_composite_score(row['__WholeText_1'], row['__WholeText_2']), 
+            axis=1
+        )
         
-        text = f"{col1}|{col2}|{col3}".upper()
-        # Remove massive spaces
-        text = re.sub(r'\s+', ' ', text).strip()
-        r['__WholeText'] = text
-        nodes.add(r['ID'])
+        # Filter strictly for pairs with > 75% composite similarity
+        valid_pairs = df_pairs[df_pairs['CompositeScore'] > 0.75]
         
-        b_keys = get_blocking_keys(text)
-        for bk in b_keys:
-            blocks[bk].append(r)
+        # Extract pairs to standard python for fast DFS graph traversal
+        for _, row in valid_pairs.iterrows():
+            edges[row['KUNNR_1']].append(row['KUNNR_2'])
+            edges[row['KUNNR_2']].append(row['KUNNR_1'])
             
-    # 2. Find Valid Pairs within Blocks
-    processed_pairs = set()
-    
-    for block_key, block_records in blocks.items():
-        n = len(block_records)
-        for i in range(n):
-            for j in range(i + 1, n):
-                r1 = block_records[i]
-                r2 = block_records[j]
-                
-                # Ensure we don't process the same pair multiple times if they share multiple blocks
-                pair_id = tuple(sorted([r1['ID'], r2['ID']]))
-                if pair_id in processed_pairs:
-                    continue
-                processed_pairs.add(pair_id)
-                
-                t1, t2 = r1['__WholeText'], r2['__WholeText']
-                
-                if abs(len(t1) - len(t2)) > 5:
-                    continue
-                    
-                dist = levenshtein_distance(t1, t2)
-                if dist <= threshold_pct * max(len(t1), len(t2)):
-                    edges[r1['ID']].append(r2['ID'])
-                    edges[r2['ID']].append(r1['ID'])
-                    
-    # 3. Find Connected Components (DFS Graph Traversal)
+    # 5. Fast Graph Traversal (DFS)
     visited = set()
     clusters = {}
     
@@ -110,29 +134,23 @@ def fuzzy_deduplicate(records, threshold_pct=0.15):
             for member in component:
                 clusters[member] = cluster_id
                 
-    # 4. Final Output Formatting
-    output = []
-    for r in records:
-        text = r.pop('__WholeText')
-        r['Cluster_ID'] = clusters[r['ID']]
-        r['WholeRecordText'] = text
-        output.append(r)
+    df['Cluster_ID'] = df['KUNNR'].map(clusters)
+    
+    # 6. Extract Common and Uncommon parts
+    # Find the "Master" record text for each cluster
+    centroid_texts = df[df['KUNNR'] == df['Cluster_ID']].set_index('Cluster_ID')['__WholeText'].to_dict()
+    
+    def get_diffs(row):
+        c_id = row['Cluster_ID']
+        r_text = row['__WholeText']
+        c_text = centroid_texts.get(c_id, r_text)
+        return extract_diff_parts(c_text, r_text)
         
-    output.sort(key=lambda x: (x['Cluster_ID'], x['ID']))
-    return output
-
-def transform(data):
-    """
-    SAP Datasphere Python Dataflow Entry Point.
-    Accepts a Pandas DataFrame, processes it, and returns a Pandas DataFrame.
-    """
-    import pandas as pd
+    # Apply the diff extractor to generate the final display columns
+    df[['CommonPart', 'UncommonPart']] = df.apply(
+        lambda row: pd.Series(get_diffs(row)), axis=1
+    )
     
-    # Fast conversion to dictionaries for optimized processing (much faster than df.iterrows)
-    records = data.to_dict('records')
-    
-    # Execute the fuzzy deduplication logic
-    results = fuzzy_deduplicate(records)
-    
-    # Convert back to DataFrame
-    return pd.DataFrame(results)
+    # 7. Final Formatting (Return only requested columns)
+    final_cols = ['KUNNR', 'Cluster_ID', 'CommonPart', 'UncommonPart']
+    return df[final_cols].sort_values(['Cluster_ID', 'KUNNR']).reset_index(drop=True)

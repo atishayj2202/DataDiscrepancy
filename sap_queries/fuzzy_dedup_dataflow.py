@@ -120,3 +120,19 @@ def fuzzy_deduplicate(records, threshold_pct=0.15):
         
     output.sort(key=lambda x: (x['Cluster_ID'], x['ID']))
     return output
+
+def transform(data):
+    """
+    SAP Datasphere Python Dataflow Entry Point.
+    Accepts a Pandas DataFrame, processes it, and returns a Pandas DataFrame.
+    """
+    import pandas as pd
+    
+    # Fast conversion to dictionaries for optimized processing (much faster than df.iterrows)
+    records = data.to_dict('records')
+    
+    # Execute the fuzzy deduplication logic
+    results = fuzzy_deduplicate(records)
+    
+    # Convert back to DataFrame
+    return pd.DataFrame(results)

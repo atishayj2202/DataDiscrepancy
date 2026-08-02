@@ -1,26 +1,31 @@
 import pandas as pd
-import traceback
+import numpy as np
 
 def transform(df: pd.DataFrame) -> pd.DataFrame:
     """
     SAP Datasphere Python Dataflow Entry Point.
-    Instrumented with granular try-except blocks to trace exactly where Datasphere is failing.
+    Uses ONLY Pandas and Numpy.
+    Instrumented with print statements for Datasphere console logging.
     """
+    print("STARTING SCRIPT: Validating DataFrame...")
     try:
         if df.empty:
+            print("DataFrame is empty, returning early.")
             return df
             
         # ---------------------------------------------------------
         # PHASE 1: Convert to pure Python list of dicts
         # ---------------------------------------------------------
+        print("PHASE 1: Converting DataFrame to Python list of dicts...")
         try:
             records = df.to_dict('records')
         except Exception as e:
-            raise RuntimeError(f"PHASE 1 ERROR (DataFrame Conversion): {str(e)}\n{traceback.format_exc()}") from e
+            raise RuntimeError(f"PHASE 1 ERROR (DataFrame Conversion): {str(e)}")
             
         # ---------------------------------------------------------
         # PHASE 2: Pure Python Data Prep & Blocking
         # ---------------------------------------------------------
+        print("PHASE 2: Preparing text and grouping by Blocking Key (LAND1)...")
         try:
             blocks = {}
             for r in records:
@@ -40,13 +45,14 @@ def transform(df: pd.DataFrame) -> pd.DataFrame:
                     blocks[land1] = []
                 blocks[land1].append(r)
         except Exception as e:
-            raise RuntimeError(f"PHASE 2 ERROR (Data Prep & Blocking): {str(e)}\n{traceback.format_exc()}") from e
+            raise RuntimeError(f"PHASE 2 ERROR (Data Prep & Blocking): {str(e)}")
             
         edges = {}
         
         # ---------------------------------------------------------
         # PHASE 3: Fuzzy Math & Candidate Pairs
         # ---------------------------------------------------------
+        print("PHASE 3: Running Levenshtein distance on candidate pairs...")
         try:
             for land1, block_records in blocks.items():
                 n = len(block_records)
@@ -91,11 +97,12 @@ def transform(df: pd.DataFrame) -> pd.DataFrame:
                             edges[k1].append(k2)
                             edges[k2].append(k1)
         except Exception as e:
-            raise RuntimeError(f"PHASE 3 ERROR (Fuzzy Math & Edge Generation): {str(e)}\n{traceback.format_exc()}") from e
+            raise RuntimeError(f"PHASE 3 ERROR (Fuzzy Math & Edge Generation): {str(e)}")
 
         # ---------------------------------------------------------
         # PHASE 4: Inline Graph Traversal (DFS)
         # ---------------------------------------------------------
+        print("PHASE 4: Connecting duplicate pairs into Clusters (DFS)...")
         try:
             visited = set()
             clusters = {}
@@ -127,11 +134,12 @@ def transform(df: pd.DataFrame) -> pd.DataFrame:
                         clusters[member] = cluster_id
                         cluster_texts[member] = centroid_text
         except Exception as e:
-            raise RuntimeError(f"PHASE 4 ERROR (Graph DFS Traversal): {str(e)}\n{traceback.format_exc()}") from e
+            raise RuntimeError(f"PHASE 4 ERROR (Graph DFS Traversal): {str(e)}")
 
         # ---------------------------------------------------------
         # PHASE 5: Output Extraction & Filtering
         # ---------------------------------------------------------
+        print("PHASE 5: Extracting Common/Uncommon Parts and filtering unique records...")
         try:
             output_rows = []
             
@@ -180,22 +188,26 @@ def transform(df: pd.DataFrame) -> pd.DataFrame:
                     'UncommonPart': u_part.strip()[:64]
                 })
         except Exception as e:
-            raise RuntimeError(f"PHASE 5 ERROR (Diff Extraction & Filtering): {str(e)}\n{traceback.format_exc()}") from e
+            raise RuntimeError(f"PHASE 5 ERROR (Diff Extraction & Filtering): {str(e)}")
             
         # ---------------------------------------------------------
         # PHASE 6: Final DataFrame Formatting
         # ---------------------------------------------------------
+        print("PHASE 6: Generating final Pandas DataFrame...")
         try:
             final_df = pd.DataFrame(output_rows)
             if final_df.empty:
+                print("No duplicates found. Returning empty dataframe.")
                 return pd.DataFrame(columns=['KUNNR', 'Cluster_ID', 'CommonPart', 'UncommonPart'])
                 
+            print("Formatting complete! Returning payload.")
             return final_df.sort_values(['Cluster_ID', 'KUNNR']).reset_index(drop=True)
         except Exception as e:
-            raise RuntimeError(f"PHASE 6 ERROR (Final DataFrame Generation): {str(e)}\n{traceback.format_exc()}") from e
+            raise RuntimeError(f"PHASE 6 ERROR (Final DataFrame Generation): {str(e)}")
 
     except Exception as general_e:
+        print(f"FATAL SCRIPT ERROR: {str(general_e)}")
         # Absolute fallback to ensure errors aren't silently swallowed
         if "PHASE" in str(general_e):
             raise general_e
-        raise RuntimeError(f"UNKNOWN FATAL ERROR: {str(general_e)}\n{traceback.format_exc()}") from general_e
+        raise RuntimeError(f"UNKNOWN FATAL ERROR: {str(general_e)}")

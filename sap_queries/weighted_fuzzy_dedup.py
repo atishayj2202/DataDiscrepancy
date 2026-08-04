@@ -4,7 +4,7 @@ import numpy as np
 def transform(df: pd.DataFrame) -> pd.DataFrame:
     """
     SAP Datasphere Python Dataflow Entry Point.
-    Basic Algorithm: Column-by-Column average Levenshtein similarity.
+    Advanced Algorithm: Cardinality-Weighted Column-by-Column Fuzzy Deduplication.
     """
     try:
         if df.empty:
@@ -15,17 +15,27 @@ def transform(df: pd.DataFrame) -> pd.DataFrame:
         # ---------------------------------------------------------
         try:
             records = df.to_dict('records')
+            total_records = len(records)
         except Exception as e:
             raise RuntimeError(f"PHASE 1 ERROR (DataFrame Conversion): {str(e)}")
             
         # ---------------------------------------------------------
-        # PHASE 2: Column-by-Column Data Prep & Blocking
+        # PHASE 2: Calculate Cardinality Weights & Block Data
         # ---------------------------------------------------------
         try:
-            # Dynamically identify all text columns
             text_cols = [c for c in df.columns if c not in ('KUNNR', 'LAND1')]
-            blocks = {}
             
+            # 2a. Calculate dataset-wide cardinality for every column
+            # (Higher cardinality = more unique values = higher weight when matching)
+            col_weights = {}
+            for c in text_cols:
+                unique_vals = set(r.get(c, '') for r in records if pd.notnull(r.get(c)))
+                # Normalize weight between ~0.0 and 1.0
+                weight = len(unique_vals) / total_records if total_records > 0 else 1.0
+                # Ensure no column has literally 0 weight
+                col_weights[c] = max(weight, 0.05)
+                
+            blocks = {}
             for r in records:
                 kunnr = str(r.get('KUNNR', ''))
                 land1 = str(r.get('LAND1', ''))
@@ -42,12 +52,12 @@ def transform(df: pd.DataFrame) -> pd.DataFrame:
                     blocks[land1] = []
                 blocks[land1].append(r)
         except Exception as e:
-            raise RuntimeError(f"PHASE 2 ERROR (Data Prep & Blocking): {str(e)}")
+            raise RuntimeError(f"PHASE 2 ERROR (Data Prep & Cardinality Weighting): {str(e)}")
             
         edges = {}
         
         # ---------------------------------------------------------
-        # PHASE 3: Column-by-Column Fuzzy Math
+        # PHASE 3: Weighted Column-by-Column Fuzzy Math
         # ---------------------------------------------------------
         try:
             for land1, block_records in blocks.items():
@@ -57,20 +67,22 @@ def transform(df: pd.DataFrame) -> pd.DataFrame:
                         r1 = block_records[i]
                         r2 = block_records[j]
                         
-                        col_sims = []
+                        weighted_sim_sum = 0.0
+                        total_weight = 0.0
                         valid_comparison = True
                         
                         for c in text_cols:
                             t1 = r1[f'__{c}']
                             t2 = r2[f'__{c}']
+                            w = col_weights[c]
                             
-                            # Fast fail if any column is wildly different in length
                             if abs(len(t1) - len(t2)) > 15:
                                 valid_comparison = False
                                 break
                                 
                             if len(t1) == 0 and len(t2) == 0:
-                                col_sims.append(1.0)
+                                weighted_sim_sum += (1.0 * w)
+                                total_weight += w
                                 continue
                                 
                             # INLINE LEVENSHTEIN ALGORITHM
@@ -91,25 +103,30 @@ def transform(df: pd.DataFrame) -> pd.DataFrame:
                                     previous_row = current_row
                                 dist = previous_row[-1]
                             
+                            # The 'Length of Change' impact is mathematically inherent here.
+                            # A 1-char typo in a 3-char string = 0.66 sim (huge penalty).
+                            # A 1-char typo in a 20-char string = 0.95 sim (minor penalty).
                             max_len = max(len(t1), len(t2))
                             sim = 1.0 - (dist / max_len)
-                            col_sims.append(sim)
                             
-                        if not valid_comparison:
+                            weighted_sim_sum += (sim * w)
+                            total_weight += w
+                            
+                        if not valid_comparison or total_weight == 0:
                             continue
                             
-                        # Average similarity across all columns
-                        avg_sim = sum(col_sims) / len(col_sims) if col_sims else 0.0
+                        # Final score is the cardinality-weighted average
+                        composite_score = weighted_sim_sum / total_weight
                         
                         # Link valid pairs to graph
-                        if avg_sim > 0.75:
+                        if composite_score > 0.75:
                             k1, k2 = r1['KUNNR_str'], r2['KUNNR_str']
                             if k1 not in edges: edges[k1] = []
                             if k2 not in edges: edges[k2] = []
                             edges[k1].append(k2)
                             edges[k2].append(k1)
         except Exception as e:
-            raise RuntimeError(f"PHASE 3 ERROR (Fuzzy Math & Edge Generation): {str(e)}")
+            raise RuntimeError(f"PHASE 3 ERROR (Weighted Fuzzy Math): {str(e)}")
 
         # ---------------------------------------------------------
         # PHASE 4: Inline Graph Traversal (DFS)
@@ -134,7 +151,6 @@ def transform(df: pd.DataFrame) -> pd.DataFrame:
                     
                     cluster_id = min(component)
                     
-                    # Store the entire master record of this cluster for diff extraction
                     centroid_rec = None
                     for rec in records:
                         if rec['KUNNR_str'] == cluster_id:
@@ -152,8 +168,6 @@ def transform(df: pd.DataFrame) -> pd.DataFrame:
         # ---------------------------------------------------------
         try:
             output_rows = []
-            
-            # Calculate cluster sizes manually to filter unique records
             cluster_sizes = {}
             for c in clusters.values():
                 cluster_sizes[c] = cluster_sizes.get(c, 0) + 1
@@ -226,7 +240,6 @@ def transform(df: pd.DataFrame) -> pd.DataFrame:
             raise RuntimeError(f"PHASE 6 ERROR (Final DataFrame Generation): {str(e)}")
 
     except Exception as general_e:
-        # Absolute fallback to ensure errors aren't silently swallowed
         if "PHASE" in str(general_e):
             raise general_e
         raise RuntimeError(f"UNKNOWN FATAL ERROR: {str(general_e)}")

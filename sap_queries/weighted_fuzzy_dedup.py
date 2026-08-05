@@ -69,20 +69,24 @@ def transform(df: pd.DataFrame) -> pd.DataFrame:
                         
                         weighted_sim_sum = 0.0
                         total_weight = 0.0
-                        valid_comparison = True
                         
                         for c in text_cols:
                             t1 = r1[f'__{c}']
                             t2 = r2[f'__{c}']
                             w = col_weights[c]
                             
-                            if abs(len(t1) - len(t2)) > 15:
-                                valid_comparison = False
-                                break
-                                
+                            # CRITICAL FIX: If BOTH are empty, completely ignore this column (don't score it, don't weigh it!)
                             if len(t1) == 0 and len(t2) == 0:
-                                weighted_sim_sum += (1.0 * w)
-                                total_weight += w
+                                continue
+                                
+                            total_weight += w
+                            
+                            # If only ONE is empty, it's a 0% match (weight is added, but sim sum gets +0.0)
+                            if len(t1) == 0 or len(t2) == 0:
+                                continue
+                                
+                            # Fast fail if any column is wildly different in length
+                            if abs(len(t1) - len(t2)) > 15:
                                 continue
                                 
                             # INLINE LEVENSHTEIN ALGORITHM
@@ -103,23 +107,19 @@ def transform(df: pd.DataFrame) -> pd.DataFrame:
                                     previous_row = current_row
                                 dist = previous_row[-1]
                             
-                            # The 'Length of Change' impact is mathematically inherent here.
-                            # A 1-char typo in a 3-char string = 0.66 sim (huge penalty).
-                            # A 1-char typo in a 20-char string = 0.95 sim (minor penalty).
                             max_len = max(len(t1), len(t2))
                             sim = 1.0 - (dist / max_len)
                             
                             weighted_sim_sum += (sim * w)
-                            total_weight += w
                             
-                        if not valid_comparison or total_weight == 0:
+                        if total_weight == 0:
                             continue
                             
                         # Final score is the cardinality-weighted average
                         composite_score = weighted_sim_sum / total_weight
                         
-                        # Link valid pairs to graph
-                        if composite_score > 0.75:
+                        # Link valid pairs to graph (Threshold increased to 85%)
+                        if composite_score >= 0.85:
                             k1, k2 = r1['KUNNR_str'], r2['KUNNR_str']
                             if k1 not in edges: edges[k1] = []
                             if k2 not in edges: edges[k2] = []
@@ -204,18 +204,24 @@ def transform(df: pd.DataFrame) -> pd.DataFrame:
                             if c1 == c2: suffix_len += 1
                             else: break
                             
-                        if suffix_len > 0:
+                        # Mathematically inject '...' where the typo occurred
+                        if suffix_len > 0 and prefix_len > 0:
                             c_part = c_text[:prefix_len] + " ... " + c_text[len(c_text)-suffix_len:]
+                        elif prefix_len > 0:
+                            c_part = c_text[:prefix_len] + " ..."
+                        elif suffix_len > 0:
+                            c_part = "... " + c_text[len(c_text)-suffix_len:]
                         else:
-                            c_part = c_text[:prefix_len]
+                            c_part = "..."
                             
-                        u_part = r_text[prefix_len : len(r_text)-suffix_len]
+                        c_diff = c_text[prefix_len : len(c_text)-suffix_len]
+                        r_diff = r_text[prefix_len : len(r_text)-suffix_len]
                         
-                        if c_part:
+                        if c_part != "...":
                             common_parts.append(c_part.strip())
-                        if u_part:
-                            # Tag the uncommon part with the specific field name!
-                            uncommon_parts.append(f"{c}({u_part.strip()})")
+                            
+                        # Show BOTH sides of the change! e.g. NAME1(LE -> EL)
+                        uncommon_parts.append(f"{c}({c_diff.strip()} -> {r_diff.strip()})")
                             
                 # Format with | separators and truncate to 250 characters max
                 output_rows.append({

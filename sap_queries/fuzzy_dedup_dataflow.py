@@ -64,13 +64,18 @@ def transform(df: pd.DataFrame) -> pd.DataFrame:
                             t1 = r1[f'__{c}']
                             t2 = r2[f'__{c}']
                             
+                            # CRITICAL FIX: If BOTH are empty, completely ignore this column (don't score it as 100%!)
+                            if len(t1) == 0 and len(t2) == 0:
+                                continue
+                                
+                            # If only ONE is empty, it's a 0% match for this column
+                            if len(t1) == 0 or len(t2) == 0:
+                                col_sims.append(0.0)
+                                continue
+                            
                             # Fast fail if any column is wildly different in length
                             if abs(len(t1) - len(t2)) > 15:
-                                valid_comparison = False
-                                break
-                                
-                            if len(t1) == 0 and len(t2) == 0:
-                                col_sims.append(1.0)
+                                col_sims.append(0.0)
                                 continue
                                 
                             # INLINE LEVENSHTEIN ALGORITHM
@@ -95,14 +100,11 @@ def transform(df: pd.DataFrame) -> pd.DataFrame:
                             sim = 1.0 - (dist / max_len)
                             col_sims.append(sim)
                             
-                        if not valid_comparison:
-                            continue
-                            
-                        # Average similarity across all columns
+                        # Average similarity across all VALID columns
                         avg_sim = sum(col_sims) / len(col_sims) if col_sims else 0.0
                         
-                        # Link valid pairs to graph
-                        if avg_sim > 0.75:
+                        # Link valid pairs to graph (Threshold increased to 85%)
+                        if avg_sim >= 0.85:
                             k1, k2 = r1['KUNNR_str'], r2['KUNNR_str']
                             if k1 not in edges: edges[k1] = []
                             if k2 not in edges: edges[k2] = []
@@ -190,18 +192,24 @@ def transform(df: pd.DataFrame) -> pd.DataFrame:
                             if c1 == c2: suffix_len += 1
                             else: break
                             
-                        if suffix_len > 0:
+                        # Mathematically inject '...' where the typo occurred
+                        if suffix_len > 0 and prefix_len > 0:
                             c_part = c_text[:prefix_len] + " ... " + c_text[len(c_text)-suffix_len:]
+                        elif prefix_len > 0:
+                            c_part = c_text[:prefix_len] + " ..."
+                        elif suffix_len > 0:
+                            c_part = "... " + c_text[len(c_text)-suffix_len:]
                         else:
-                            c_part = c_text[:prefix_len]
+                            c_part = "..."
                             
-                        u_part = r_text[prefix_len : len(r_text)-suffix_len]
+                        c_diff = c_text[prefix_len : len(c_text)-suffix_len]
+                        r_diff = r_text[prefix_len : len(r_text)-suffix_len]
                         
-                        if c_part:
+                        if c_part != "...":
                             common_parts.append(c_part.strip())
-                        if u_part:
-                            # Tag the uncommon part with the specific field name!
-                            uncommon_parts.append(f"{c}({u_part.strip()})")
+                            
+                        # Show BOTH sides of the change! e.g. NAME1(LE -> EL)
+                        uncommon_parts.append(f"{c}({c_diff.strip()} -> {r_diff.strip()})")
                             
                 # Format with | separators and truncate to 250 characters max
                 output_rows.append({

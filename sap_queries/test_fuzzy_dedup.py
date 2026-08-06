@@ -31,6 +31,10 @@ class TestFuzzyDeduplication(unittest.TestCase):
                 # UncommonPart should now explicitly tag the field with the typo!
                 self.assertEqual(node_2['UncommonPart'], "NAME1( -> .)")
                 
+                # Assert Fuzzy_Score exists and contains the | separator
+                self.assertIn("Fuzzy_Score", node_2)
+                self.assertIn("|", node_2['Fuzzy_Score'])
+                
                 # CommonPart should now separate fields with the | pipe
                 self.assertIn("APPLE INC", node_2['CommonPart'])
                 self.assertIn("123 MAIN ST", node_2['CommonPart'])

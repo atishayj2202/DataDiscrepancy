@@ -173,15 +173,48 @@ def transform(df: pd.DataFrame) -> pd.DataFrame:
                 common_parts = []
                 uncommon_parts = []
                 
-                # INLINE FIELD-LEVEL DIFF EXTRACTION
+                unweighted_sim_sum = 0.0
+                valid_cols = 0
+                
+                # INLINE FIELD-LEVEL DIFF EXTRACTION & SCORE CALCULATION
                 for c in text_cols:
                     r_text = r[f'__{c}']
                     c_text = c_rec[f'__{c}']
                     
+                    if len(r_text) == 0 and len(c_text) == 0:
+                        continue
+                        
+                    valid_cols += 1
+                    
+                    if len(r_text) == 0 or len(c_text) == 0:
+                        uncommon_parts.append(f"{c}({c_text} -> {r_text})")
+                        continue
+                        
                     if c_text == r_text:
+                        unweighted_sim_sum += 1.0
                         if r_text:
                             common_parts.append(r_text)
                     else:
+                        # INLINE LEVENSHTEIN (Recompute explicitly against Centroid)
+                        s1, s2 = c_text, r_text
+                        if len(s1) < len(s2):
+                            s1, s2 = s2, s1
+                        previous_row = list(range(len(s2) + 1))
+                        for idx, c1 in enumerate(s1):
+                            current_row = [idx + 1]
+                            for jdx, c2 in enumerate(s2):
+                                insertions = previous_row[jdx + 1] + 1
+                                deletions = current_row[jdx] + 1
+                                substitutions = previous_row[jdx] + (c1 != c2)
+                                current_row.append(min(insertions, deletions, substitutions))
+                            previous_row = current_row
+                        dist = previous_row[-1]
+                        
+                        max_len = max(len(c_text), len(r_text))
+                        sim = 1.0 - (dist / max_len)
+                        
+                        unweighted_sim_sum += sim
+                        
                         prefix_len = 0
                         for c1, c2 in zip(c_text, r_text):
                             if c1 == c2: prefix_len += 1
@@ -210,11 +243,16 @@ def transform(df: pd.DataFrame) -> pd.DataFrame:
                             
                         # Show BOTH sides of the change! e.g. NAME1(LE -> EL)
                         uncommon_parts.append(f"{c}({c_diff.strip()} -> {r_diff.strip()})")
+                        
+                u_score = unweighted_sim_sum / valid_cols if valid_cols > 0 else 0.0
+                # Maintain exact schema output format (Weighted | Unweighted)
+                fuzzy_score_str = f"N/A | {u_score:.3f}"
                             
                 # Format with | separators and truncate to 250 characters max
                 output_rows.append({
                     'KUNNR': kunnr,
                     'Cluster_ID': cid,
+                    'Fuzzy_Score': fuzzy_score_str,
                     'CommonPart': " | ".join(common_parts)[:250],
                     'UncommonPart': " | ".join(uncommon_parts)[:250]
                 })

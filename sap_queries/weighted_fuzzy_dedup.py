@@ -69,6 +69,8 @@ def transform(df: pd.DataFrame) -> pd.DataFrame:
                         
                         weighted_sim_sum = 0.0
                         total_weight = 0.0
+                        unweighted_sim_sum = 0.0
+                        valid_cols = 0
                         
                         for c in text_cols:
                             t1 = r1[f'__{c}']
@@ -80,6 +82,7 @@ def transform(df: pd.DataFrame) -> pd.DataFrame:
                                 continue
                                 
                             total_weight += w
+                            valid_cols += 1
                             
                             # If only ONE is empty, it's a 0% match (weight is added, but sim sum gets +0.0)
                             if len(t1) == 0 or len(t2) == 0:
@@ -111,15 +114,17 @@ def transform(df: pd.DataFrame) -> pd.DataFrame:
                             sim = 1.0 - (dist / max_len)
                             
                             weighted_sim_sum += (sim * w)
+                            unweighted_sim_sum += sim
                             
-                        if total_weight == 0:
+                        if total_weight == 0 or valid_cols == 0:
                             continue
                             
-                        # Final score is the cardinality-weighted average
+                        # Final scores
                         composite_score = weighted_sim_sum / total_weight
+                        unweighted_score = unweighted_sim_sum / valid_cols
                         
-                        # Link valid pairs to graph (Threshold increased to 85%)
-                        if composite_score >= 0.85:
+                        # Link valid pairs to graph (Dual Threshold Validation)
+                        if composite_score >= 0.85 and unweighted_score >= 0.80:
                             k1, k2 = r1['KUNNR_str'], r2['KUNNR_str']
                             if k1 not in edges: edges[k1] = []
                             if k2 not in edges: edges[k2] = []
@@ -185,15 +190,54 @@ def transform(df: pd.DataFrame) -> pd.DataFrame:
                 common_parts = []
                 uncommon_parts = []
                 
-                # INLINE FIELD-LEVEL DIFF EXTRACTION
+                weighted_sim_sum = 0.0
+                total_weight = 0.0
+                unweighted_sim_sum = 0.0
+                valid_cols = 0
+                
+                # INLINE FIELD-LEVEL DIFF EXTRACTION & SCORE CALCULATION
                 for c in text_cols:
                     r_text = r[f'__{c}']
                     c_text = c_rec[f'__{c}']
+                    w = col_weights[c]
                     
+                    if len(r_text) == 0 and len(c_text) == 0:
+                        continue
+                        
+                    total_weight += w
+                    valid_cols += 1
+                    
+                    if len(r_text) == 0 or len(c_text) == 0:
+                        uncommon_parts.append(f"{c}({c_text} -> {r_text})")
+                        continue
+                        
                     if c_text == r_text:
+                        weighted_sim_sum += (1.0 * w)
+                        unweighted_sim_sum += 1.0
                         if r_text:
                             common_parts.append(r_text)
                     else:
+                        # INLINE LEVENSHTEIN (Recompute explicitly against Centroid)
+                        s1, s2 = c_text, r_text
+                        if len(s1) < len(s2):
+                            s1, s2 = s2, s1
+                        previous_row = list(range(len(s2) + 1))
+                        for idx, c1 in enumerate(s1):
+                            current_row = [idx + 1]
+                            for jdx, c2 in enumerate(s2):
+                                insertions = previous_row[jdx + 1] + 1
+                                deletions = current_row[jdx] + 1
+                                substitutions = previous_row[jdx] + (c1 != c2)
+                                current_row.append(min(insertions, deletions, substitutions))
+                            previous_row = current_row
+                        dist = previous_row[-1]
+                        
+                        max_len = max(len(c_text), len(r_text))
+                        sim = 1.0 - (dist / max_len)
+                        
+                        weighted_sim_sum += (sim * w)
+                        unweighted_sim_sum += sim
+                        
                         prefix_len = 0
                         for c1, c2 in zip(c_text, r_text):
                             if c1 == c2: prefix_len += 1
@@ -222,11 +266,16 @@ def transform(df: pd.DataFrame) -> pd.DataFrame:
                             
                         # Show BOTH sides of the change! e.g. NAME1(LE -> EL)
                         uncommon_parts.append(f"{c}({c_diff.strip()} -> {r_diff.strip()})")
+                        
+                c_score = weighted_sim_sum / total_weight if total_weight > 0 else 0.0
+                u_score = unweighted_sim_sum / valid_cols if valid_cols > 0 else 0.0
+                fuzzy_score_str = f"{c_score:.3f} | {u_score:.3f}"
                             
                 # Format with | separators and truncate to 250 characters max
                 output_rows.append({
                     'KUNNR': kunnr,
                     'Cluster_ID': cid,
+                    'Fuzzy_Score': fuzzy_score_str,
                     'CommonPart': " | ".join(common_parts)[:250],
                     'UncommonPart': " | ".join(uncommon_parts)[:250]
                 })

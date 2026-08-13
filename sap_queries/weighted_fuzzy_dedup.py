@@ -84,8 +84,10 @@ def transform(df: pd.DataFrame) -> pd.DataFrame:
                             total_weight += w
                             valid_cols += 1
                             
-                            # If only ONE is empty, it's a 0% match (weight is added, but sim sum gets +0.0)
+                            # Null Value Check: If one has value and other is null, consider 100% same
                             if len(t1) == 0 or len(t2) == 0:
+                                weighted_sim_sum += (1.0 * w)
+                                unweighted_sim_sum += 1.0
                                 continue
                                 
                             # Fast fail if any column is wildly different in length
@@ -208,6 +210,9 @@ def transform(df: pd.DataFrame) -> pd.DataFrame:
                     valid_cols += 1
                     
                     if len(r_text) == 0 or len(c_text) == 0:
+                        # Null Value Check: Consider 100% same
+                        weighted_sim_sum += (1.0 * w)
+                        unweighted_sim_sum += 1.0
                         uncommon_parts.append(f"{c}({c_text} -> {r_text})")
                         continue
                         
@@ -272,13 +277,27 @@ def transform(df: pd.DataFrame) -> pd.DataFrame:
                 fuzzy_score_str = f"{c_score:.3f} | {u_score:.3f}"
                             
                 # Format with | separators and truncate to 250 characters max
-                output_rows.append({
+                out_dict = {
                     'KUNNR': kunnr,
                     'Cluster_ID': cid,
                     'Fuzzy_Score': fuzzy_score_str,
                     'CommonPart': " | ".join(common_parts)[:250],
                     'UncommonPart': " | ".join(uncommon_parts)[:250]
-                })
+                }
+                
+                # Add Null Show Flags
+                null_cnt = 0
+                for c in text_cols:
+                    val = r.get(f'__{c}', '')
+                    is_null = (len(val) == 0)
+                    if is_null:
+                        null_cnt += 1
+                    
+                    if c not in ('KUNNR', 'NAME2'):
+                        out_dict[f'{c}_null_flag'] = is_null
+                        
+                out_dict['null_cnt'] = null_cnt
+                output_rows.append(out_dict)
         except Exception as e:
             raise RuntimeError(f"PHASE 5 ERROR (Diff Extraction & Filtering): {str(e)}")
             

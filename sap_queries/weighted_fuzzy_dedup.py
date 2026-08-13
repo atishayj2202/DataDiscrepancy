@@ -77,17 +77,19 @@ def transform(df: pd.DataFrame) -> pd.DataFrame:
                             t2 = r2[f'__{c}']
                             w = col_weights[c]
                             
-                            # CRITICAL FIX: If BOTH are empty, completely ignore this column (don't score it, don't weigh it!)
+                            # If BOTH are empty, score as 100% match for this field
                             if len(t1) == 0 and len(t2) == 0:
+                                weighted_sim_sum += (1.0 * w)
+                                unweighted_sim_sum += 1.0
+                                total_weight += w
+                                valid_cols += 1
                                 continue
                                 
                             total_weight += w
                             valid_cols += 1
                             
-                            # Null Value Check: If one has value and other is null, consider 100% same
+                            # If only ONE is empty, it is a 0% match for this field
                             if len(t1) == 0 or len(t2) == 0:
-                                weighted_sim_sum += (1.0 * w)
-                                unweighted_sim_sum += 1.0
                                 continue
                                 
                             # Fast fail if any column is wildly different in length
@@ -203,16 +205,17 @@ def transform(df: pd.DataFrame) -> pd.DataFrame:
                     c_text = c_rec[f'__{c}']
                     w = col_weights[c]
                     
-                    if len(r_text) == 0 and len(c_text) == 0:
-                        continue
-                        
                     total_weight += w
                     valid_cols += 1
                     
-                    if len(r_text) == 0 or len(c_text) == 0:
-                        # Null Value Check: Consider 100% same
+                    if len(r_text) == 0 and len(c_text) == 0:
+                        # If BOTH are empty, score as 100% match
                         weighted_sim_sum += (1.0 * w)
                         unweighted_sim_sum += 1.0
+                        continue
+                        
+                    if len(r_text) == 0 or len(c_text) == 0:
+                        # If only ONE is empty, it is a 0% match
                         uncommon_parts.append(f"{c}({c_text} -> {r_text})")
                         continue
                         

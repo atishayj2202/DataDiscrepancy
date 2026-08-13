@@ -64,13 +64,14 @@ def transform(df: pd.DataFrame) -> pd.DataFrame:
                             t1 = r1[f'__{c}']
                             t2 = r2[f'__{c}']
                             
-                            # CRITICAL FIX: If BOTH are empty, completely ignore this column (don't score it)
+                            # If BOTH are empty, score as 100% match for this field
                             if len(t1) == 0 and len(t2) == 0:
+                                col_sims.append(1.0)
                                 continue
                             
-                            # Null Value Check: If one has value and other is null, consider 100% same
+                            # If only ONE is empty, it is a 0% match for this field
                             if len(t1) == 0 or len(t2) == 0:
-                                col_sims.append(1.0)
+                                col_sims.append(0.0)
                                 continue
                             
                             # Fast fail if any column is wildly different in length
@@ -186,9 +187,13 @@ def transform(df: pd.DataFrame) -> pd.DataFrame:
                         
                     valid_cols += 1
                     
-                    if len(r_text) == 0 or len(c_text) == 0:
-                        # Null Value Check: Consider 100% same
+                    if len(r_text) == 0 and len(c_text) == 0:
+                        # If BOTH are empty, score as 100% match
                         unweighted_sim_sum += 1.0
+                        continue
+                        
+                    if len(r_text) == 0 or len(c_text) == 0:
+                        # If only ONE is empty, it is a 0% match
                         uncommon_parts.append(f"{c}({c_text} -> {r_text})")
                         continue
                         

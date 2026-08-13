@@ -64,9 +64,9 @@ def transform(df: pd.DataFrame) -> pd.DataFrame:
                             t1 = r1[f'__{c}']
                             t2 = r2[f'__{c}']
                             
-                            # If BOTH are empty, score as 100% match for this field
+                            # If BOTH are empty, score as 50% match for this field
                             if len(t1) == 0 and len(t2) == 0:
-                                col_sims.append(1.0)
+                                col_sims.append(0.5)
                                 continue
                             
                             # If only ONE is empty, it is a 0% match for this field
@@ -188,8 +188,8 @@ def transform(df: pd.DataFrame) -> pd.DataFrame:
                     valid_cols += 1
                     
                     if len(r_text) == 0 and len(c_text) == 0:
-                        # If BOTH are empty, score as 100% match
-                        unweighted_sim_sum += 1.0
+                        # If BOTH are empty, score as 50% match
+                        unweighted_sim_sum += 0.5
                         continue
                         
                     if len(r_text) == 0 or len(c_text) == 0:

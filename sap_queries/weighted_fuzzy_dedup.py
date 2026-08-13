@@ -77,10 +77,10 @@ def transform(df: pd.DataFrame) -> pd.DataFrame:
                             t2 = r2[f'__{c}']
                             w = col_weights[c]
                             
-                            # If BOTH are empty, score as 100% match for this field
+                            # If BOTH are empty, score as 50% match for this field
                             if len(t1) == 0 and len(t2) == 0:
-                                weighted_sim_sum += (1.0 * w)
-                                unweighted_sim_sum += 1.0
+                                weighted_sim_sum += (0.5 * w)
+                                unweighted_sim_sum += 0.5
                                 total_weight += w
                                 valid_cols += 1
                                 continue
@@ -209,9 +209,9 @@ def transform(df: pd.DataFrame) -> pd.DataFrame:
                     valid_cols += 1
                     
                     if len(r_text) == 0 and len(c_text) == 0:
-                        # If BOTH are empty, score as 100% match
-                        weighted_sim_sum += (1.0 * w)
-                        unweighted_sim_sum += 1.0
+                        # If BOTH are empty, score as 50% match
+                        weighted_sim_sum += (0.5 * w)
+                        unweighted_sim_sum += 0.5
                         continue
                         
                     if len(r_text) == 0 or len(c_text) == 0:

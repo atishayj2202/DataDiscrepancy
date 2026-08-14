@@ -74,3 +74,28 @@ When findings are collected, the engine ranks discrepancies automatically using 
 1. **Criticality**: sorted by level: `High` > `Medium` > `Low`.
 2. **Rows Affected**: sorted by the number of affected rows (highest volume first).
 This puts the most severe, high-volume issues at the top of the dashboard.
+
+---
+
+## ☁️ SAP Datasphere Integration: Advanced Fuzzy Deduplication
+
+Beyond the local Data Quality Dashboard, this project includes a massive, production-grade script engineered specifically to run inside an **SAP Datasphere Python Dataflow Node** (`sap_queries/final_sap_dedup.py`). Due to extreme environment constraints inside SAP (no multi-threading, strict memory limits, and blocked C-level libraries like `difflib`), we engineered a monolithic, pure-Python deduplication engine from scratch.
+
+### 🧠 The Dual-Validation Fuzzy Engine
+To prevent false-positive record merges, the engine utilizes a highly advanced, mathematically rigorous dual-lock system:
+1. **Intelligent Cardinality Weighting (>= 85%):** The engine dynamically calculates the global cardinality (uniqueness) of every text column across the entire dataset. Typos in highly unique fields (like Phone Numbers or IDs) are penalized heavily, while typos in common fields (like Country Codes) are mathematically suppressed.
+2. **Baseline Character Match (>= 80%):** A secondary pure, unweighted character check guarantees foundational similarity. Records must pass BOTH locks to cluster.
+
+### ⚖️ Intelligent Null-Forgiveness Logic
+Missing data does not mean records belong to different entities. The algorithm handles blanks intelligently:
+* **One Null, One Value (0% Match):** If one record has a value but the other is completely blank, it scores that specific field comparison as `0.0`, heavily penalizing the match due to the direct contradiction.
+* **Double Null (50% Match):** If BOTH records are missing data in the exact same field, it scores the field at `0.5`. This acknowledges the records share the same missing-data state, without artificially inflating the score to a perfect `1.0`.
+
+### 🔬 Surgical Diff Visualization & Output Schema
+To allow non-technical Data Stewards to instantly validate clusters, the engine uses prefix/suffix array scanning to surgically rip out the exact typographical error:
+* **Fuzzy_Score:** Automatically re-computes the exact distance from every duplicate to the absolute Cluster Centroid (`0.852 | 0.820`).
+* **CommonPart:** Injects ellipses exactly where the typo was ripped out (`APPLE ... INC`).
+* **UncommonPart:** Explicitly names the column and the error (`NAME1(LE -> EL)`).
+
+**Strict Schema Enforcement:** 
+SAP Datasphere crashes if a Python node returns a variable output schema. The script dynamically maps all necessary diagnostic flag columns (e.g., `[fieldname]_null_flag`, `null_cnt`) and mathematically guarantees the output dataframe has the exact same structural schema every single time—even if 0 duplicates are found in the entire database (by injecting a dummy `NO_DATA` row).

@@ -75,27 +75,31 @@ When findings are collected, the engine ranks discrepancies automatically using 
 2. **Rows Affected**: sorted by the number of affected rows (highest volume first).
 This puts the most severe, high-volume issues at the top of the dashboard.
 
----
+## ☁️ SAP Datasphere Integration: Advanced Fuzzy Deduplication (`final_sap_dedup.py`)
 
-## ☁️ SAP Datasphere Integration: Advanced Fuzzy Deduplication
+Beyond the local Data Quality Dashboard, this project includes a massive, production-grade script engineered specifically to run inside an **SAP Datasphere Python Dataflow Node**. Due to extreme environment constraints inside SAP (no multi-threading, strict memory limits, and blocked C-level libraries like `difflib`), we engineered a monolithic, pure-Python deduplication engine from scratch, located at `sap_queries/final_sap_dedup.py`.
 
-Beyond the local Data Quality Dashboard, this project includes a massive, production-grade script engineered specifically to run inside an **SAP Datasphere Python Dataflow Node** (`sap_queries/final_sap_dedup.py`). Due to extreme environment constraints inside SAP (no multi-threading, strict memory limits, and blocked C-level libraries like `difflib`), we engineered a monolithic, pure-Python deduplication engine from scratch.
+Here is a deep-dive breakdown of the 6-Phase architecture executing inside the SAP container:
 
-### 🧠 The Dual-Validation Fuzzy Engine
-To prevent false-positive record merges, the engine utilizes a highly advanced, mathematically rigorous dual-lock system:
-1. **Intelligent Cardinality Weighting (>= 85%):** The engine dynamically calculates the global cardinality (uniqueness) of every text column across the entire dataset. Typos in highly unique fields (like Phone Numbers or IDs) are penalized heavily, while typos in common fields (like Country Codes) are mathematically suppressed.
-2. **Baseline Character Match (>= 80%):** A secondary pure, unweighted character check guarantees foundational similarity. Records must pass BOTH locks to cluster.
+### Phase 1 & 2: Cardinality-Weighted Blocking
+To bypass Pandas' heavy C-level operations, the script immediately converts the dataset into a pure Python list of dictionaries. 
+* **Global Cardinality Scanning:** The engine mathematically scans the entire dataset to determine the "uniqueness" of every text column. High-cardinality fields (like Phone Numbers) receive a massive mathematical weight modifier. Low-cardinality fields (like Country Codes) are suppressed. 
+* **Blocking:** It groups records by `LAND1` (Country) to drastically reduce the $O(n^2)$ comparison matrix, preventing SAP memory limits from being breached.
 
-### ⚖️ Intelligent Null-Forgiveness Logic
-Missing data does not mean records belong to different entities. The algorithm handles blanks intelligently:
-* **One Null, One Value (0% Match):** If one record has a value but the other is completely blank, it scores that specific field comparison as `0.0`, heavily penalizing the match due to the direct contradiction.
-* **Double Null (50% Match):** If BOTH records are missing data in the exact same field, it scores the field at `0.5`. This acknowledges the records share the same missing-data state, without artificially inflating the score to a perfect `1.0`.
+### Phase 3: The Dual-Validation Fuzzy Engine & Null-Forgiveness
+Instead of concatenating rows into messy strings, it compares records column-by-column using a custom, inline Dynamic Programming Levenshtein Loop.
+* **Intelligent Null-Forgiveness:** Missing data is handled probabilistically. If one record has a value but the other is completely blank, it scores that specific field comparison as `0.0` (heavily penalizing the match due to contradiction). If BOTH records are missing data in the exact same field, it scores the field at `0.5` (acknowledging they share the same missing-data state without artificially inflating the score to `1.0`).
+* **The Dual-Lock Check:** For a duplicate to be clustered, it must pass a rigorous dual-validation check: It must score **>= 85%** on the Cardinality-Weighted scale, AND **>= 80%** on the pure, unweighted baseline character scale.
 
-### 🔬 Surgical Diff Visualization & Output Schema
-To allow non-technical Data Stewards to instantly validate clusters, the engine uses prefix/suffix array scanning to surgically rip out the exact typographical error:
-* **Fuzzy_Score:** Automatically re-computes the exact distance from every duplicate to the absolute Cluster Centroid (`0.852 | 0.820`).
-* **CommonPart:** Injects ellipses exactly where the typo was ripped out (`APPLE ... INC`).
-* **UncommonPart:** Explicitly names the column and the error (`NAME1(LE -> EL)`).
+### Phase 4: Graph DFS & Centroid Election
+Because duplicates form transitive chains (Record A matches Record B; Record B matches Record C), the script uses inline Depth-First Search (DFS) graph traversal to group transitive clusters. It automatically designates the oldest/smallest alphanumeric ID (`KUNNR`) in the cluster as the absolute **Cluster Centroid** (The Master Record).
 
-**Strict Schema Enforcement:** 
-SAP Datasphere crashes if a Python node returns a variable output schema. The script dynamically maps all necessary diagnostic flag columns (e.g., `[fieldname]_null_flag`, `null_cnt`) and mathematically guarantees the output dataframe has the exact same structural schema every single time—even if 0 duplicates are found in the entire database (by injecting a dummy `NO_DATA` row).
+### Phase 5: Surgical Diff Extraction
+To allow non-technical Data Stewards to instantly validate clusters without hunting for typos, the script runs a surgical prefix/suffix array scan:
+* **Inline Recalculation:** It mathematically re-calculates the exact Levenshtein distance between every single duplicate and the Master Record, outputting a precise `Fuzzy_Score` column (e.g., `0.852 | 0.820`).
+* **CommonPart / UncommonPart:** It literally reads the strings forward and backward to rip out the exact typo, intentionally injecting ellipses (`...`) where the typo occurred (`APPLE ... INC`), and explicitly displaying the typographical error in the uncommon column (`NAME1(LE -> EL)`).
+* **Null Diagnostics:** It generates deep null-tracking columns, outputting a global `null_cnt` integer and a boolean `TRUE/FALSE` flag for every specific text column to identify where data drops are occurring.
+
+### Phase 6: Strict Schema Enforcement
+SAP Datasphere instantly crashes if a Python node returns a variable output schema. Because our output relies on dynamically generated `[fieldname]_null_flag` columns, the script mathematically guarantees the structural output schema is identical every single time.
+* If 0 duplicates are found in the entire database, instead of throwing an error or returning a blank 4-column structure, it injects a single dummy `NO_DATA` row that perfectly maps to the 15+ column target schema, keeping the SAP pipeline permanently stable.
